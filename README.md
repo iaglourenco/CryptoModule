@@ -56,3 +56,8 @@ Documentação do Kernel: pasta Documentation/crypto no código fonte do kernel.
 **Iago Lourenço**  [iaglourenco](https://github.com/iaglourenco)
 
 **Lucas Coutinho** - [lucasrcoutinho](https://github.com/lucasrcoutinho)
+
+
+# Licença
+
+Este projeto esta licenciado pela MIT License - veja [LICENSE.md](LICENSE.md) para mais detalhes.
