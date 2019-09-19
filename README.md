@@ -60,4 +60,4 @@ Documentação do Kernel: pasta Documentation/crypto no código fonte do kernel.
 
 # Licença
 
-Este projeto esta licenciado pela MIT License - veja [LICENSE.md](LICENSE.md) para mais detalhes.
+Este projeto esta licenciado pela MIT License - veja [LICENSE](LICENSE) para mais detalhes.
