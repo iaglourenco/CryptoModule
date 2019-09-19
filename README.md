@@ -47,7 +47,7 @@ Documentação do Kernel: pasta Documentation/crypto no código fonte do kernel.
 
 [derekmolloy](https://github.com/derekmolloy) GitHub  Repo - [exploringBB](https://github.com/derekmolloy/exploringBB/tree/master/extras/kernel/)
 
-[Simple demo explaining usage of the Linux](http://www.logix.cz/michal/devel/cryptodev/cryptoapi-demo.c.xp)
+[Simple demo explaining usage of the Linux CryptoAPI](http://www.logix.cz/michal/devel/cryptodev/cryptoapi-demo.c.xp)
 
 # Autores
 
