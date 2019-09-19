@@ -44,6 +44,7 @@ Documentação do Kernel: pasta Documentation/crypto no código fonte do kernel.
 [Linux Kernel Crypto API](https://www.kernel.org/doc/html/v4.12/crypto/index.html)
 
 [Writing a Linux Kernel Module - Part 2: A Character Device](http://derekmolloy.ie/writing-a-linux-kernel-module-part-2-a-character-device)
+
 [derekmolloy](https://github.com/derekmolloy) GitHub  Repo - [exploringBB](https://github.com/derekmolloy/exploringBB/tree/master/extras/kernel/)
 
 [Simple demo explaining usage of the Linux](http://www.logix.cz/michal/devel/cryptodev/cryptoapi-demo.c.xp)
