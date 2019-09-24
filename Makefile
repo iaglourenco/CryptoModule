@@ -4,7 +4,7 @@
 ## Iago Lourenço
 ## Lucas Coutinho
 
-#obj-m += cryptoexample.o
+obj-m += cryptoexample.o
 obj-m += ebbchar.o
 
 all:

@@ -9,7 +9,7 @@
 #include <linux/init.h>
 #include <linux/crypto.h>
 #include <linux/mm.h>
-#include <asm/scatterlist.h>
+#include <linux/scatterlist.h>
 
 #define PFX "cryptoapi-demo: "
 
