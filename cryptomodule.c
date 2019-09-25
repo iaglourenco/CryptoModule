@@ -60,7 +60,7 @@ static int __init crypto_init(void){
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
         return majorNumber;
     }
-    printk(KERN_INFO "CRYPTO--> Dispositivo resgistrado com o mj=%d\n",majorNumber);
+    printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
     //Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
     //@param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
@@ -114,7 +114,7 @@ static int dev_open(struct inode *inodep,struct file *filep){
 
 static int dev_release(struct inode *inodep,struct file *filep){
 
-    printk("CRYPTO--> Precisando eh so chamar!!\n");
+    printk(KERN_INFO "CRYPTO--> Precisando eh so chamar!!\n");
     return 0;
 }
 
