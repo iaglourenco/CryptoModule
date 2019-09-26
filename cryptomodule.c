@@ -24,13 +24,36 @@ MODULE_AUTHOR("Adriano Munin, Fabio Irokawa, Iago Lourenço, Lucas Coutinho");
 MODULE_DESCRIPTION("Modulo de criptografia");
 MODULE_VERSION("0.1");
 
+//Modulo
 
 static int majorNumber; //Guarda o numero do dispositivo
-//static char mensagem[256] = {0}; //A mensagem
-//static int tamanho_mensagem; //Guarda o tamanho da mensagem
+//static char buffer[256] = {0}; //buffer do módulo
+//static int tamanho_buffer; //Guarda o tamanho do buffer
 static int numAberturas = 0; //Conta quantas vezes o dispositivo foi aberto
+
+//Criptografia
+static char *iv[16]; //Guarda o vetor de inicialização
+static char *key[16]; //Guarda a chave de criptografia que sera utilizada
+static int tamIv=0; //Usada para se lembrar do tamanho do iv
+static int tamKey=0; // tamanho da key
+
 static struct class* cryptoClass = NULL; //O ponteiro para a struct de classe 
 static struct device* cryptoDev = NULL;//O ponteiro para a struct de dispositivo 
+
+/*
+* module_param_array(name, type, num, perm);
+* The first param is the parameter's (in this case the array's) name
+* The second param is the data type of the elements of the array
+* The third argument is a pointer to the variable that will store the number
+* of elements of the array initialized by the user at module loading time
+* The fourth argument is the permission bits
+*/
+module_param_array(key,charp,&tamKey,0000);
+MODULE_PARM_DESC(key,"Chave de criptografia");
+
+module_param_array(iv,charp,&tamIv,0000);
+MODULE_PARM_DESC(iv,"Vetor de inicialização");
+
 
 //Prototipo das funçoes
 static int dev_open(struct inode *, struct file *);
@@ -49,6 +72,7 @@ static struct file_operations fops =
 //função do nascimento do módulo
 static int __init crypto_init(void){
 
+    
     //Tento alocar um majorNumber para o dispositivo
     //@param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
     //        2 - o nome do filho
@@ -93,6 +117,9 @@ static int __init crypto_init(void){
         return PTR_ERR(cryptoDev);
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
+
+    printk("Tamanho IV=%d\n",tamIv);
+    printk("Tamanho Key=%d\n",tamKey);
     return 0;
 }
 
