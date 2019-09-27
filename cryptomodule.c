@@ -14,6 +14,7 @@
 #include <linux/fs.h>       // Suporte ao sistema de arquivos linux
 #include <linux/uaccess.h>  //Função copy_to_user
 #include <linux/crypto.h>   //Funçoes de criptografia
+#include <linux/string.h>
 
 #define DEVICE_NAME "crypto"    //Nome do dispositivo, aparece em /dev/crypto 
 #define CLASS_NAME "cryptomodule" 
@@ -54,7 +55,8 @@ static char encrypted[256]={0};
 static int tamEncrypted; 
 static char decrypted[256]={0};
 static int tamDecrypted;
-
+int pos;
+char op;
 
 module_param(iv,charp,0000);
 MODULE_PARM_DESC(iv,"Vetor de inicialização");
@@ -67,7 +69,7 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
-
+static int op_pos(char *);
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
 static struct file_operations fops = 
@@ -187,16 +189,45 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
     //receberei a mensagem em hexa, o programa do usuario cuida da conversao
-    sprintf(input,"%s CRIPTO",buffer);//mensagem esta em buffer aqui so passo ela pra input
-    tamInput = strlen(buffer);
+    strcpy(input,buffer);
+    pos = op_pos(input);
+    op = input[pos];
+    input[pos-1] = '\0';
+    tamInput = strlen(input);
     
-    //criptografia aqui
-    
+    if(op == 'c'){
+        printk("CRYPTO--> Criptografando..\n");
+        //criptografia aqui
+    }else if(op == 'd'){
+        printk("CRYPTO--> Descriptografando..\n");
+        //descriptografia aqui
+    }else{
+        printk("CRYPTO--> Gerando Hash..\n");
+        //hash aqui
+    }
+
     tamEncrypted = strlen(input);
     strcpy(encrypted,input);
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
     return len;
 }
+
+
+static int op_pos(char * str){
+
+int i;
+    for (i=0;i<strlen(str);i++){
+
+        if(str[i] == ':'){
+            if(str[i+1] == 'c' || str[i+1] == 'd' || str[i+1] == 'h'){
+                return i+1;
+            }
+        }
+    }
+
+
+return 0;
+}    
 
 module_init(crypto_init);
 module_exit(crypto_exit);

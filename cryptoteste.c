@@ -17,24 +17,39 @@ static char recebido[TAM_BUFFER];
 
 int main(int argc, char *argv[]){
 
+   uid_t uid=getuid();
    int option=-99;
    int ret,crypto;
    char *operacao = argv[1];
    if(argc==1) operacao = "none";
    
-   if(strcmp(operacao,"c")==0) option=1;
-      
-   if(strcmp(operacao,"d")==0) option=2;
+   if(strcmp(operacao,"c")==0) {
+      argv[2]=strcat(argv[2],":c");
+      option=1;
+   }
+   if(strcmp(operacao,"d")==0) {
+      argv[2]=strcat(argv[2],":d");
+      option=2;
+   }
    
-   if(strcmp(operacao,"h")==0) option=3;
-   
+   if(strcmp(operacao,"h")==0) {
+      argv[2]=strcat(argv[2],":h");
+      option=3;
+   }
    if(strcmp(operacao,"-h")==0) option=0;
 
    if(option >=1 && option <=3){
+      if(uid!=0){
+         printf(".:CryptoDev:. precisa ser executado como root...\n");
+         printf("Faca login como root (su root) ou tente 'sudo ./crypto' ...\n");
+         return 0;
+
+      }else{
       crypto = open("/dev/crypto",O_RDWR);
-      if(crypto < 0){
-         perror("Falha ao acessar dispositivo...");
-         return errno;
+         if(crypto < 0){
+            perror("Falha ao acessar dispositivo...");
+            return errno;
+         }
       }
    }
    
@@ -93,7 +108,7 @@ int main(int argc, char *argv[]){
    case 0:
       printf(".:CryptoDev:. - Desenvolvido por Adriano, Fabio, Iago e Lucas\n");
       printf("Faz operaçoes de criptografia usando um LKM\n");
-      printf("Como usar: ./crypto [OPERACAO] [DADO]\n...\n");
+      printf("Como usar: ./crypto [OPERACAO] [DADO]\n------\n");
       printf("OPERACOES\n\t c - Criptografar\n\t d - Descriptografar\n\t h - Gerar Hash\n\t-h - Esta tela de ajuda\n\n");
       printf("DADO - Qualquer valor diferente de NULL\n");
       break;
