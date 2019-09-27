@@ -27,15 +27,7 @@ MODULE_VERSION("0.1");
 //Modulo
 
 static int majorNumber; //Guarda o numero do dispositivo
-//static char buffer[256] = {0}; //buffer do módulo
-//static int tamanho_buffer; //Guarda o tamanho do buffer
 static int numAberturas = 0; //Conta quantas vezes o dispositivo foi aberto
-
-//Criptografia
-static char *iv[16]; //Guarda o vetor de inicialização
-static char *key[16]; //Guarda a chave de criptografia que sera utilizada
-static int tamIv=0; //Usada para se lembrar do tamanho do iv
-static int tamKey=0; // tamanho da key
 
 static struct class* cryptoClass = NULL; //O ponteiro para a struct de classe 
 static struct device* cryptoDev = NULL;//O ponteiro para a struct de dispositivo 
@@ -48,37 +40,71 @@ static struct device* cryptoDev = NULL;//O ponteiro para a struct de dispositivo
 * of elements of the array initialized by the user at module loading time
 * The fourth argument is the permission bits
 */
-module_param_array(key,charp,&tamKey,0000);
-MODULE_PARM_DESC(key,"Chave de criptografia");
 
-module_param_array(iv,charp,&tamIv,0000);
+static char *iv;
+static char *key;//Guarda o array de strings recebidos do usuario
+static int tamIv=0;
+static int tamKey=0; //Para se lembrar do tamanho das strings
+static char cryptokey[32];
+static char cryptoiv[32];
+
+static char input[256]={0};
+static int tamInput;
+static char encrypted[256]={0};
+static int tamEncrypted; 
+static char decrypted[256]={0};
+static int tamDecrypted;
+
+
+module_param(iv,charp,0000);
 MODULE_PARM_DESC(iv,"Vetor de inicialização");
 
+module_param(key,charp,0000);
+MODULE_PARM_DESC(key,"Chave de criptografia");
 
 //Prototipo das funçoes
 static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
-//static ssize_t dev_read();
-//static ssize_t dev_write();
+static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
+static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
 static struct file_operations fops = 
 {
     .open = dev_open,
-    .release = dev_release, 
+    .release = dev_release,
+    .read = dev_read,
+    .write = dev_write, 
 };
 
 //função do nascimento do módulo
 static int __init crypto_init(void){
+    /*
+    *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
+    */
+        if(iv!=NULL){
+            tamIv=strlen(iv);
+        }
+        if(key!=NULL){
+            tamKey=strlen(key);
+        }
 
+        if(tamIv == 0 || tamKey == 0) {
+            printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
+            //return -EFAULT;
+        }
+        printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
+        printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
+        
     
-    //Tento alocar um majorNumber para o dispositivo
-    //@param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
-    //        2 - o nome do filho
-    //        3 - a struct com as funçoes que podem ser efetuadas  
-    //@return: o mj do dispositivo se deu certo
-    //         ou uma flag de erro 
+    /*Tento alocar um majorNumber para o dispositivo
+    *   @param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
+    *           2 - o nome do filho
+    *            3 - a struct com as funçoes que podem ser efetuadas  
+    *    @return: o mj do dispositivo se deu certo
+    *             ou uma flag de erro 
+    */
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
     if(majorNumber<0){//majorNumbers sao numeros entre 0 e 256
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
@@ -86,13 +112,14 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
-    //Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
-    //@param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
-    //        2 - nome da classe
-    //@return: flag de erro
-    //         struct class  
-    //Há código repetido aqui, pois caso haja falha no registro de
-    //classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
+    /*Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
+    *    @param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
+    *            2 - nome da classe
+    *    @return: flag de erro
+    *           struct class  
+    *    Há código repetido aqui, pois caso haja falha no registro de
+    *    classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
+    */
     cryptoClass = class_create(THIS_MODULE,CLASS_NAME);
     if(IS_ERR(cryptoClass)){
         unregister_chrdev(majorNumber,DEVICE_NAME);
@@ -101,14 +128,15 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Classe registrada\n");
 
-    //Registra o dispositivo
-    //@param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
-    //        2 - caso o device seja dependente de outro passariamos a struct device desse device
-    //        3 - cria um objeto device com o nosso mj e mn
-    //        4 - nao sei :)
-    //        5 - nome do device
-    //@return: a struct device
-    //         flag de erro  
+    /*Registra o dispositivo
+    *    @param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
+    *            2 - caso o device seja dependente de outro passariamos a struct device desse device
+    *            3 - cria um objeto device com o nosso mj e mn
+    *            4 - nao sei :)
+    *            5 - nome do device
+    *    @return: a struct device
+    *            flag de erro  
+    */
     cryptoDev=device_create(cryptoClass,NULL,MKDEV(majorNumber,0),NULL,DEVICE_NAME);
     if(IS_ERR(cryptoDev)){//repeated code :(
         class_destroy(cryptoClass);
@@ -118,8 +146,6 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
 
-    printk("Tamanho IV=%d\n",tamIv);
-    printk("Tamanho Key=%d\n",tamKey);
     return 0;
 }
 
@@ -138,11 +164,38 @@ static int dev_open(struct inode *inodep,struct file *filep){
     return 0;
 }
 
-
 static int dev_release(struct inode *inodep,struct file *filep){
 
-    printk(KERN_INFO "CRYPTO--> Precisando eh so chamar!!\n");
+    printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n");
     return 0;
+}
+
+static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offset){
+    int erros=0;
+    //TODO aqui verificar se e para enviar o decrypted ou o encrypted
+    erros=copy_to_user(buffer,encrypted,tamEncrypted);
+    //erros=copy_to_user(buffer,decrypted,tamEncrypted);
+
+    if(erros==0){
+        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
+        return 0;
+    }else{
+        printk(KERN_ALERT "CRYPTO--> Falha ao enviar mensagem\n");
+        return -EFAULT;
+    }
+}
+
+static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
+    //receberei a mensagem em hexa, o programa do usuario cuida da conversao
+    sprintf(input,"%s CRIPTO",buffer);//mensagem esta em buffer aqui so passo ela pra input
+    tamInput = strlen(buffer);
+    
+    //criptografia aqui
+    
+    tamEncrypted = strlen(input);
+    strcpy(encrypted,input);
+    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
+    return len;
 }
 
 module_init(crypto_init);

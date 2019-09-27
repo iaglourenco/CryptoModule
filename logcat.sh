@@ -1,3 +1,3 @@
 #!/bin/sh
 
-dmesg -w -k -H -T | grep -i crypto
+dmesg -w -k -H -T 
