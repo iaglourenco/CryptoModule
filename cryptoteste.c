@@ -24,15 +24,18 @@ int main(int argc, char *argv[]){
    if(argc==1) operacao = "none";
    
    if(strcmp(operacao,"c")==0) {
+      if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
       argv[2]=strcat(argv[2],":c");
       option=1;
    }
    if(strcmp(operacao,"d")==0) {
+      if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
       argv[2]=strcat(argv[2],":d");
       option=2;
    }
    
    if(strcmp(operacao,"h")==0) {
+      if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
       argv[2]=strcat(argv[2],":h");
       option=3;
    }
@@ -57,7 +60,7 @@ int main(int argc, char *argv[]){
    {
       case 1:
          printf("--:Criptografia:--\n");
-         if(argc==2){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
+         printf("%d",argc);
          ret = write(crypto,argv[2],strlen(argv[2]));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
@@ -73,7 +76,6 @@ int main(int argc, char *argv[]){
       break;
       case 2:
          printf("--<Descriptografia>--\n");
-         if(argc==2){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
          ret = write(crypto,argv[2],strlen(argv[2]));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
@@ -90,7 +92,6 @@ int main(int argc, char *argv[]){
       break;
       case 3:
          printf("-#-Gerar Hash-#-\n");
-         if(argc==2){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
          ret = write(crypto,argv[2],strlen(argv[2]));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");

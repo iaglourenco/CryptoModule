@@ -46,8 +46,8 @@ static char *iv;
 static char *key;//Guarda o array de strings recebidos do usuario
 static int tamIv=0;
 static int tamKey=0; //Para se lembrar do tamanho das strings
-static char cryptokey[32];
-static char cryptoiv[32];
+//static char cryptokey[32];
+//static char cryptoiv[32];
 
 static DEFINE_MUTEX(crypto_mutex);
 static char input[256]={0};
@@ -56,9 +56,12 @@ static char encrypted[256]={0};
 static int tamEncrypted; 
 static char decrypted[256]={0};
 static int tamDecrypted;
+static char hash[256]={0};
+static int tamHash;
 int pos,i;
 char op;
 char hexa[512]={0};
+char buf;
 
 module_param(iv,charp,0000);
 MODULE_PARM_DESC(iv,"Vetor de inicialização");
@@ -72,6 +75,8 @@ static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 static int op_pos(char *);
+static int hex_to_ascii(char,char);
+static int hex_to_int(char);
 
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
@@ -90,13 +95,10 @@ static int __init crypto_init(void){
     /*
     *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
     */
-        if(iv!=NULL){
-            tamIv=strlen(iv);
-        }
-        if(key!=NULL){
-            tamKey=strlen(key);
-        }
-
+        if(iv!=NULL) tamIv=strlen(iv);
+        
+        if(key!=NULL) tamKey=strlen(key);    
+        
         if(tamIv == 0 || tamKey == 0) {
             printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
             return -EINVAL;
@@ -186,9 +188,16 @@ static int dev_release(struct inode *inodep,struct file *filep){
 static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offset){
     int erros=0;
     //TODO aqui verificar se e para enviar o decrypted ou o encrypted
-    erros=copy_to_user(buffer,encrypted,tamEncrypted);
-    //erros=copy_to_user(buffer,decrypted,tamEncrypted);
-
+    
+    if(op == 'c'){
+        erros=copy_to_user(buffer,encrypted,tamEncrypted);
+    }else if(op == 'd'){
+        erros=copy_to_user(buffer,decrypted,tamDecrypted);
+    }else{
+        erros=copy_to_user(buffer,hash,tamHash);
+    }
+    
+    strcpy(encrypted," ");
     if(erros==0){
         printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
         return 0;
@@ -205,28 +214,59 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
     input[pos-1] = '\0';
     tamInput = strlen(input);
 
+    //conversao de ascii pra hexa
     for(i=0;i<tamInput;i++){
         sprintf(hexa+i*2,"%02X",input[i]);
     }
     printk("DEBUG %s\n",hexa);
+    
+    
+    //conversao de hexa pra ascii
+    buf = 0;
+    for(i =0;i<strlen(hexa);i++){
+        if(i%2 !=0){
+            sprintf(decrypted+i/2,"%c",hex_to_ascii(buf,hexa[i]));
+        }else{
+            buf=hexa[i];
+        }
+    }
+    printk("DEBUG %s\n",decrypted);
 
     if(op == 'c'){
         printk("CRYPTO--> Criptografando..\n");
         //criptografia aqui
+        tamEncrypted=strlen(strcat(hexa,"-CRIPTO"));
+        strcpy(encrypted,strcat(hexa,"-CRIPTO"));
     }else if(op == 'd'){
         printk("CRYPTO--> Descriptografando..\n");
         //descriptografia aqui
+        tamDecrypted=strlen(strcat(hexa,"-DECRIPTO"));
+        strcpy(decrypted,strcat(hexa,"-DECRIPTO"));
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
+        tamHash=strlen(strcat(hexa,"-HASH"));
+        strcpy(hash,strcat(hexa,"-HASH"));
     }
 
-    tamEncrypted = strlen(hexa);
-    strcpy(encrypted,hexa);
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
     return len;
 }
 
+
+static int hex_to_int(char c){
+    int first = c/16 - 3;
+    int second = c%16;
+    int result = first*10+second;
+    if(result>9) result--;
+    return result;
+}
+
+static int hex_to_ascii(char c,char d){
+    int high = hex_to_int(c) * 16;
+    int low = hex_to_int(d);
+    return high+low;
+}
 
 static int op_pos(char * str){
 
