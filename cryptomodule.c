@@ -14,7 +14,7 @@
 #include <linux/fs.h>       // Suporte ao sistema de arquivos linux
 #include <linux/uaccess.h>  //Função copy_to_user
 #include <linux/crypto.h>   //Funçoes de criptografia
-#include <linux/string.h>
+#include <linux/mutex.h>
 
 #define DEVICE_NAME "crypto"    //Nome do dispositivo, aparece em /dev/crypto 
 #define CLASS_NAME "cryptomodule" 
@@ -49,14 +49,16 @@ static int tamKey=0; //Para se lembrar do tamanho das strings
 static char cryptokey[32];
 static char cryptoiv[32];
 
+static DEFINE_MUTEX(crypto_mutex);
 static char input[256]={0};
 static int tamInput;
 static char encrypted[256]={0};
 static int tamEncrypted; 
 static char decrypted[256]={0};
 static int tamDecrypted;
-int pos;
+int pos,i;
 char op;
+char hexa[512]={0};
 
 module_param(iv,charp,0000);
 MODULE_PARM_DESC(iv,"Vetor de inicialização");
@@ -70,6 +72,7 @@ static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 static int op_pos(char *);
+
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
 static struct file_operations fops = 
@@ -82,6 +85,8 @@ static struct file_operations fops =
 
 //função do nascimento do módulo
 static int __init crypto_init(void){
+    mutex_init(&crypto_mutex);
+    
     /*
     *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
     */
@@ -94,7 +99,7 @@ static int __init crypto_init(void){
 
         if(tamIv == 0 || tamKey == 0) {
             printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
-            //return -EFAULT;
+            return -EINVAL;
         }
         printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
         printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
@@ -153,6 +158,7 @@ static int __init crypto_init(void){
 
 //função assassinadora do módulo :-)
 static void __exit crypto_exit(void){
+    mutex_destroy(&crypto_mutex);
     device_destroy(cryptoClass,MKDEV(majorNumber,0));
     class_unregister(cryptoClass);
     class_destroy(cryptoClass);
@@ -161,13 +167,18 @@ static void __exit crypto_exit(void){
 }
 
 static int dev_open(struct inode *inodep,struct file *filep){
+    if(!mutex_trylock(&crypto_mutex)){
+        printk(KERN_ALERT "CRYPTO--> Requisiçao bloqueada!!\n");
+        return -EBUSY;
+    }
+    
     numAberturas++;
     printk(KERN_INFO "CRYPTO--> Voce ja me abriu %d vezes\n",numAberturas);
     return 0;
 }
 
 static int dev_release(struct inode *inodep,struct file *filep){
-
+    mutex_unlock(&crypto_mutex);
     printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n");
     return 0;
 }
@@ -188,13 +199,17 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 }
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
-    //receberei a mensagem em hexa, o programa do usuario cuida da conversao
     strcpy(input,buffer);
     pos = op_pos(input);
     op = input[pos];
     input[pos-1] = '\0';
     tamInput = strlen(input);
-    
+
+    for(i=0;i<tamInput;i++){
+        sprintf(hexa+i*2,"%02X",input[i]);
+    }
+    printk("DEBUG %s\n",hexa);
+
     if(op == 'c'){
         printk("CRYPTO--> Criptografando..\n");
         //criptografia aqui
@@ -206,8 +221,8 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         //hash aqui
     }
 
-    tamEncrypted = strlen(input);
-    strcpy(encrypted,input);
+    tamEncrypted = strlen(hexa);
+    strcpy(encrypted,hexa);
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
     return len;
 }
