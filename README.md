@@ -44,7 +44,7 @@ Como dito acima, para testar as funcionalidades do módulo de criptografia criam
 `sudo ./crypto [operação] [dado]`
 
 onde, 
-- `sudo` é necessario para se adquirir privilégios administrativos para acesso a pasta ´/dev/crypto´. 
+- `sudo` é necessario para se adquirir privilégios administrativos para acesso a pasta `/dev/crypto`. 
 - `operação` são as opçoes descritas na seção anterior.
 - `dados` qualquer valor diferente de `NULL`.
 
