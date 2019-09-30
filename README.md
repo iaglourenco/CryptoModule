@@ -37,6 +37,19 @@ O módulo de kernel desenvolvido também deve obrigatoriamente fazer uso de `MUT
 
 Tanto o módulo de kernel quanto o programa de usuário devem ser compilados através de um Makefile.
 
+# Instruçoes 
+
+Como dito acima, para testar as funcionalidades do módulo de criptografia criamos um programa em espaço de usuário que envia requisições para o módulo, para o correto funcionamento é necessario executa-lo desta maneira:
+
+`sudo ./crypto [operação] [dado]`
+
+onde, 
+- `sudo` é necessario para se adquirir privilégios administrativos para acesso a pasta ´/dev/crypto´. 
+- `operação` são as opçoes descritas na seção anterior.
+- `dados` qualquer valor diferente de `NULL`.
+
+**Obs.:** Essa mesma explicação pode ser acessada digitando `sudo ./crypto -h`. 
+
 # Material Complementar
 
 Documentação do Kernel: pasta Documentation/crypto no código fonte do kernel.
