@@ -37,7 +37,7 @@ O módulo de kernel desenvolvido também deve obrigatoriamente fazer uso de `MUT
 
 Tanto o módulo de kernel quanto o programa de usuário devem ser compilados através de um Makefile.
 
-# Instruçoes 
+# Instruções 
 
 Como dito acima, para testar as funcionalidades do módulo de criptografia criamos um programa em espaço de usuário que envia requisições para o módulo, para o correto funcionamento é necessario executa-lo desta maneira:
 
