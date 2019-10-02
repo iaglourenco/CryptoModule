@@ -60,7 +60,6 @@ int main(int argc, char *argv[]){
    {
       case 1:
          printf("--:Criptografia:--\n");
-         printf("%d",argc);
          ret = write(crypto,argv[2],strlen(argv[2]));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");

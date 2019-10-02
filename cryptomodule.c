@@ -15,6 +15,7 @@
 #include <linux/uaccess.h>  //Função copy_to_user
 #include <linux/crypto.h>   //Funçoes de criptografia
 #include <linux/mutex.h>
+#include <linux/scatterlist.h>
 
 #define DEVICE_NAME "crypto"    //Nome do dispositivo, aparece em /dev/crypto 
 #define CLASS_NAME "cryptomodule" 
@@ -33,6 +34,18 @@ static int numAberturas = 0; //Conta quantas vezes o dispositivo foi aberto
 static struct class* cryptoClass = NULL; //O ponteiro para a struct de classe 
 static struct device* cryptoDev = NULL;//O ponteiro para a struct de dispositivo 
 
+/* Struct que guarda o resultado da cripto ou descriptografia */ 
+struct tcrypt_result{
+    struct completion completion;
+    int err;
+};
+/* Junção com todas as structs utilizadas pelas funçoes de cryptografia */
+static struct skcipher_def{
+    struct scatterlist sg;
+    struct crypto_skcipher *tfm;
+    struct skcipher_request *req;
+    struct tcrypt_result result;
+};
 /*
 * module_param_array(name, type, num, perm);
 * The first param is the parameter's (in this case the array's) name
@@ -197,7 +210,6 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
         erros=copy_to_user(buffer,hash,tamHash);
     }
     
-    strcpy(encrypted," ");
     if(erros==0){
         printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
         return 0;
@@ -214,39 +226,39 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
     input[pos-1] = '\0';
     tamInput = strlen(input);
 
-    //conversao de ascii pra hexa
-    for(i=0;i<tamInput;i++){
-        sprintf(hexa+i*2,"%02X",input[i]);
-    }
-    printk("DEBUG %s\n",hexa);
-    
-    
-    //conversao de hexa pra ascii
-    buf = 0;
-    for(i =0;i<strlen(hexa);i++){
-        if(i%2 !=0){
-            sprintf(decrypted+i/2,"%c",hex_to_ascii(buf,hexa[i]));
-        }else{
-            buf=hexa[i];
-        }
-    }
-    printk("DEBUG %s\n",decrypted);
-
     if(op == 'c'){
         printk("CRYPTO--> Criptografando..\n");
-        //criptografia aqui
-        tamEncrypted=strlen(strcat(hexa,"-CRIPTO"));
-        strcpy(encrypted,strcat(hexa,"-CRIPTO"));
+        
+        //conversao de ascii pra hexa
+        for(i=0;i<tamInput;i++){
+            sprintf(hexa+i*2,"%02X",input[i]);
+        }
+        printk("DEBUG ASC2HEX %s\n",hexa); 
+        //criptografia aqui   
+        tamEncrypted=strlen(hexa);
+        strcpy(encrypted,hexa);
+
     }else if(op == 'd'){
         printk("CRYPTO--> Descriptografando..\n");
+        //conversao de hexa pra ascii
+        buf = 0;
+        for(i =0;i<strlen(input);i++){
+            if(i%2 !=0){
+                sprintf(decrypted+i/2,"%c",hex_to_ascii(buf,input[i]));
+            }else{
+                buf=input[i];
+            }
+        }
+        printk("DEBUG HEX2ASC %s\n",decrypted);
+        
         //descriptografia aqui
-        tamDecrypted=strlen(strcat(hexa,"-DECRIPTO"));
-        strcpy(decrypted,strcat(hexa,"-DECRIPTO"));
+        tamDecrypted=strlen(decrypted);
+        strcpy(decrypted,decrypted);
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
-        tamHash=strlen(strcat(hexa,"-HASH"));
-        strcpy(hash,strcat(hexa,"-HASH"));
+        tamHash=strlen("Nao implementado ainda :(");
+        strcpy(hash,"Nao implementado ainda :(");
     }
 
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
