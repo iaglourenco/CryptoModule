@@ -74,6 +74,7 @@ static int tamHash;
 int pos,i;
 char op;
 char hexa[512]={0};
+int inteiros[256];
 char buf;
 
 module_param(iv,charp,0000);
@@ -220,26 +221,47 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 }
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
-    strcpy(input,buffer);
+    char temp[3];
+    //char hexaTeste[512]; //Remover depois de implementar cripto
+    int cont = 0;
+    strcpy(input, buffer);
+    
     pos = op_pos(input);
     op = input[pos];
     input[pos-1] = '\0';
-    tamInput = strlen(input);
+    tamInput = strlen(input); 
 
     if(op == 'c'){
         printk("CRYPTO--> Criptografando..\n");
         
-        //conversao de ascii pra hexa
-        for(i=0;i<tamInput;i++){
-            sprintf(hexa+i*2,"%02X",input[i]);
+        //Conversao de hexa para inteiro
+        for(i = 0; i < tamInput; i+=2){
+            temp[0]  = input[i];
+            temp[1]  = input[i+1];
+            temp[2]  = '\0'; 
+            sscanf(temp, "%x", &inteiros[cont]);
+            cont++;    
         }
+        
         printk("DEBUG ASC2HEX %s\n",hexa); 
-        //criptografia aqui   
+
+        //Aqui entra a criptografia!
+        /*for(i = 0; i < cont; i++){        
+            inteiros[i]++;
+            printk("%i\n",inteiros[i]);
+        }*/
+
+        //Conversao de inteiro para hexa
+        for(i = 0; i < cont; i++){                  
+            sprintf(hexa+i*2,"%x", inteiros[i]);
+        }        
+        
         tamEncrypted=strlen(hexa);
         strcpy(encrypted,hexa);
 
     }else if(op == 'd'){
         printk("CRYPTO--> Descriptografando..\n");
+        
         //conversao de hexa pra ascii
         buf = 0;
         for(i =0;i<strlen(input);i++){
@@ -291,8 +313,6 @@ int i;
             }
         }
     }
-
-
 return 0;
 }    
 
