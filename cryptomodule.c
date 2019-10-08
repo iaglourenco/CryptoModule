@@ -14,6 +14,7 @@
 #include <linux/fs.h>       // Suporte ao sistema de arquivos linux
 #include <linux/uaccess.h>  //Função copy_to_user
 #include <linux/crypto.h>   //Funçoes de criptografia
+#include <crypto/skcipher.h>   //Funçoes de criptografia
 #include <linux/mutex.h>
 #include <linux/scatterlist.h>
 
@@ -91,6 +92,8 @@ static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 static int op_pos(char *);
 static int hex_to_ascii(char,char);
 static int hex_to_int(char);
+static unsigned int perform_crypto_decrypto(struct skcipher_def*,int);
+static int init_cifra(char*,char*,unsigned char*,int );
 
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
@@ -106,70 +109,55 @@ static struct file_operations fops =
 static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
     
-    /*
-    *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
-    */
-        if(iv!=NULL) tamIv=strlen(iv);
+    int ret=0;
+   
+    if(iv!=NULL) tamIv=strlen(iv);
         
-        if(key!=NULL) tamKey=strlen(key);    
+    if(key!=NULL) tamKey=strlen(key);    
         
-        if(tamIv == 0 || tamKey == 0) {
-            printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
-            return -EINVAL;
-        }
-        printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
-        printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
+    if(tamIv == 0 || tamKey == 0) {
+        printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
+        return -EINVAL;
+    }
+    printk(KERN_INFO "CRYPTO--> IV lenght=%d\n",tamIv);
+    printk(KERN_INFO "CRYPTO--> KEY lenght=%d\n",tamKey);
         
     
-    /*Tento alocar um majorNumber para o dispositivo
-    *   @param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
-    *           2 - o nome do filho
-    *            3 - a struct com as funçoes que podem ser efetuadas  
-    *    @return: o mj do dispositivo se deu certo
-    *             ou uma flag de erro 
-    */
+    /*Tento alocar um majorNumber para o dispositivo*/
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
     if(majorNumber<0){//majorNumbers sao numeros entre 0 e 256
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
-        return majorNumber;
+        ret = majorNumber;
+        goto free;
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
-    /*Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
-    *    @param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
-    *            2 - nome da classe
-    *    @return: flag de erro
-    *           struct class  
-    *    Há código repetido aqui, pois caso haja falha no registro de
-    *    classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
-    */
+    /*Registra a classe do dispositivo    */
     cryptoClass = class_create(THIS_MODULE,CLASS_NAME);
     if(IS_ERR(cryptoClass)){
-        unregister_chrdev(majorNumber,DEVICE_NAME);
         printk(KERN_ALERT "CRYPTO--> FALHA AO REGISTRAR CLASSE\n");
-        return PTR_ERR(cryptoClass);
+        ret = PTR_ERR(cryptoClass);
+        goto free;
     }
     printk(KERN_INFO "CRYPTO--> Classe registrada\n");
 
-    /*Registra o dispositivo
-    *    @param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
-    *            2 - caso o device seja dependente de outro passariamos a struct device desse device
-    *            3 - cria um objeto device com o nosso mj e mn
-    *            4 - nao sei :)
-    *            5 - nome do device
-    *    @return: a struct device
-    *            flag de erro  
-    */
+    /*Registra o dispositivo*/
     cryptoDev=device_create(cryptoClass,NULL,MKDEV(majorNumber,0),NULL,DEVICE_NAME);
     if(IS_ERR(cryptoDev)){//repeated code :(
-        class_destroy(cryptoClass);
-        unregister_chrdev(majorNumber,DEVICE_NAME);
+       
         printk(KERN_ALERT "CRYPTO--> FALHA AO REGISTRAR DISPOSITIVO\n");
-        return PTR_ERR(cryptoDev);
+        ret = PTR_ERR(cryptoDev);
+        goto free;
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
+    goto ret;
 
-    return 0;
+free:
+    unregister_chrdev(majorNumber,DEVICE_NAME);
+    if(cryptoClass)
+        class_destroy(cryptoClass);
+ret:
+    return ret;
 }
 
 //função assassinadora do módulo :-)
@@ -286,6 +274,84 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
     return len;
 }
+
+//Faz a criptografia ou descriptografia com os dados preenchidos em skcipher
+static unsigned int perform_crypto_decrypto(struct skcipher_def *sk,int action){
+    
+    int rc = 0;
+
+    if(action == 1 ){
+        rc=crypto_skcipher_encrypt(sk->req);
+    }else{
+        rc=crypto_skcipher_decrypt(sk->req);
+    }
+    
+    switch(rc){
+        case 0:
+            break;
+            case -EINPROGRESS:
+            case -EBUSY:
+            rc = wait_for_completion_interruptible(&sk->result.completion);
+            if(!rc && !sk->result.err){
+                reinit_completion(&sk->result.completion);
+                break;
+            }
+        default:
+            printk(KERN_ALERT "CRYPTO--> crypto retornou rc=%d err=%d\n",rc,sk->result.err);
+            break;    
+    }
+    init_completion(&sk->result.completion);
+    return rc;
+}
+
+static int init_cifra(char *input,char *iv,unsigned char *key,int key_len){
+    struct skcipher_def sk;
+    struct crypto_skcipher *skcipher = NULL;
+    struct skcipher_request *req = NULL;
+    int ret = -EFAULT;
+
+    skcipher = crypto_alloc_skcipher("cbc-aes-aesni",0,0);
+    if(IS_ERR(skcipher)){
+        printk(KERN_ALERT "CRYPTO--> Falha ao alocar skcipher\n");
+        return PTR_ERR(skcipher);
+    }
+
+    req = skcipher_request_alloc(skcipher,GFP_KERNEL);
+    if(!req){
+        printk(KERN_ALERT "CRYPTO--> Falha ao alocar skcipher request\n");
+        ret = -ENOMEM;
+        goto out;
+    }
+
+    if(crypto_skcipher_setkey(skcipher,key,key_len)){
+        printk(KERN_ALERT "CRYPTO--> Falha ao definir chave\n");
+        ret = -EAGAIN;
+        goto out;
+    }
+
+    sk.tfm = skcipher;
+    sk.req = req;
+
+
+    /* 
+    sg_init_one(&sk,sg,input,16);
+    skcipher_request_set_crypt(rq,&sk.sg,&sk.sg,16,iv);
+    init_completion(&sk.result.completion);
+    
+     */
+
+    
+
+    
+out:
+    if(skcipher)
+        crypto_free_skcipher(skcipher);
+    if(req)
+        skcipher_request_free(req);
+    return ret;
+
+}
+
 
 
 static int hex_to_int(char c){

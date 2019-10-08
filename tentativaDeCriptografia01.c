@@ -16,17 +16,9 @@ struct skcipher_def {
     struct tcrypt_result result;
 };
 
-/* Callback function */
-static void test_skcipher_cb(struct crypto_async_request *req, int error)
-{
-    struct tcrypt_result *result = req->data;
 
-    if (error == -EINPROGRESS)
-        return;
-    result->err = error;
-    complete(&result->completion);
-    pr_info("Encryption finished successfully\n");
-}
+//Nao vamos usar funçoes de callback
+
 
 /* Perform cipher operation */
 static unsigned int test_skcipher_encdec(struct skcipher_def *sk,int enc)
@@ -43,8 +35,7 @@ static unsigned int test_skcipher_encdec(struct skcipher_def *sk,int enc)
         break;
     case -EINPROGRESS:
     case -EBUSY:
-        rc = wait_for_completion_interruptible(
-            &sk->result.completion);
+        rc = wait_for_completion_interruptible(&sk->result.completion);
         if (!rc && !sk->result.err) {
             reinit_completion(&sk->result.completion);
             break;
