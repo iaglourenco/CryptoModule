@@ -56,22 +56,24 @@ static struct skcipher_def{
 * The fourth argument is the permission bits
 */
 
+#define TAM_IV 16
+#define TAM_KEY 16
+
 static char *iv;
 static char *key;//Guarda o array de strings recebidos do usuario
 static int tamIv=0;
 static int tamKey=0; //Para se lembrar do tamanho das strings
-//static char cryptokey[32];
-//static char cryptoiv[32];
 
 static DEFINE_MUTEX(crypto_mutex);
-static char input[256]={0};
-static int tamInput;
-static char encrypted[256]={0};
-static int tamEncrypted; 
-static char decrypted[256]={0};
-static int tamDecrypted;
-static char hash[256]={0};
-static int tamHash;
+
+static char input;
+static char encrypted;
+static char decrypted;
+static char hash;
+
+static struct skcipher_def sk;
+static struct crypto_skcipher *skcipher = NULL;
+static struct skcipher_request *req = NULL;
 int pos,i;
 char op;
 char hexa[512]={0};
@@ -90,8 +92,6 @@ static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 static int op_pos(char *);
-static int hex_to_ascii(char,char);
-static int hex_to_int(char);
 static unsigned int perform_crypto_decrypto(struct skcipher_def*,int);
 static int init_cifra(char*,char*,unsigned char*,int );
 
@@ -108,15 +108,13 @@ static struct file_operations fops =
 //função do nascimento do módulo
 static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
-    
     int ret=0;
-   
     if(iv!=NULL) tamIv=strlen(iv);
-        
     if(key!=NULL) tamKey=strlen(key);    
         
-    if(tamIv == 0 || tamKey == 0) {
-        printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
+
+    if(tamIv < TAM_IV || tamKey < TAM_KEY) {
+        printk(KERN_ALERT "CRYPTO--> Chave ou iv invalidas, encerrando!");
         return -EINVAL;
     }
     printk(KERN_INFO "CRYPTO--> IV lenght=%d\n",tamIv);
@@ -150,7 +148,12 @@ static int __init crypto_init(void){
         goto free;
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
+
+    printk(KERN_INFO "Inicilizando cryptoAPI\n");
+    init_cifra(iv,key,tamKey);
+
     goto ret;
+
 
 free:
     unregister_chrdev(majorNumber,DEVICE_NAME);
@@ -167,6 +170,8 @@ static void __exit crypto_exit(void){
     class_unregister(cryptoClass);
     class_destroy(cryptoClass);
     unregister_chrdev(majorNumber,DEVICE_NAME);
+    crypto_free_skcipher(skcipher);
+    skcipher_request_free(req);
     printk(KERN_INFO "CRYPTO--> Adeus kernel cruel!!\n");
 }
 
@@ -189,18 +194,17 @@ static int dev_release(struct inode *inodep,struct file *filep){
 
 static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offset){
     int erros=0;
-    //TODO aqui verificar se e para enviar o decrypted ou o encrypted
-    
+  
     if(op == 'c'){
-        erros=copy_to_user(buffer,encrypted,tamEncrypted);
+        erros=copy_to_user(buffer,encrypted,sizeof(encrypted));
     }else if(op == 'd'){
-        erros=copy_to_user(buffer,decrypted,tamDecrypted);
+        erros=copy_to_user(buffer,decrypted,sizeof(decrypted));
     }else{
-        erros=copy_to_user(buffer,hash,tamHash);
+        erros=copy_to_user(buffer,hash,sizeof(hash));
     }
     
     if(erros==0){
-        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
+        printk(KERN_INFO "CRYPTO--> Mensagem enviada! OP=%c\n",op);
         return 0;
     }else{
         printk(KERN_ALERT "CRYPTO--> Falha ao enviar mensagem\n");
@@ -209,21 +213,47 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 }
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
-    char temp[3];
-    //char hexaTeste[512]; //Remover depois de implementar cripto
+    char temp[3]; //variaveis temporarias de conversao
     int cont = 0;
+
     strcpy(input, buffer);
-    
-    pos = op_pos(input);
+    pos = op_pos(input);//encontro o tipo de operacao requerida
     op = input[pos];
     input[pos-1] = '\0';
-    tamInput = strlen(input); 
+    
+    kmalloc(sizeof(input),GFP_KERNEL);
 
     if(op == 'c'){
         printk("CRYPTO--> Criptografando..\n");
         
         //Conversao de hexa para inteiro
-        for(i = 0; i < tamInput; i+=2){
+        for(i = 0; i < sizeof(input); i+=2){
+            temp[0]  = input[i];
+            temp[1]  = input[i+1];
+            temp[2]  = '\0'; 
+            sscanf(temp, "%x", &inteiros[cont]);
+            cont++;    
+        }
+
+        sg_init_one(&sk.sg,inteiros,sizeof(inteiros));
+        skcipher_request_set_crypt(req,&sk.sg,&sk.sg,16,iv);
+        init_completion(&sk.result.completion);
+        perform_crypto_decrypto(sk,1);
+        sg_copy_to_buffer(&sk.sg, 8, encrypted, 8);
+
+        
+        //Aqui entra a criptografia, criptografando o vetor inteiros
+   
+        //Conversao de inteiro para hexa
+        for(i = 0; i < cont; i++){                  
+            sprintf(encrypted+i*2,"%x", inteiros[i]);
+        }        
+        
+    }else if(op == 'd'){
+        printk("CRYPTO--> Descriptografando..\n");
+        
+        //Conversao de hexa para inteiro
+        for(i = 0; i < sizeof(input); i+=2){
             temp[0]  = input[i];
             temp[1]  = input[i+1];
             temp[2]  = '\0'; 
@@ -231,39 +261,18 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
             cont++;    
         }
         
-        printk("DEBUG ASC2HEX %s\n",hexa); 
+        //Aqui entra a descriptografia, descriptografando o vetor inteiros
+        sg_init_one(&sk.sg,inteiros,sizeof(inteiros));
+        skcipher_request_set_crypt(req,&sk.sg,&sk.sg,sizeof(inteiros),iv);
+        init_completion(&sk.result.completion);
+        perform_crypto_decrypto(sk,0);
 
-        //Aqui entra a criptografia!
-        /*for(i = 0; i < cont; i++){        
-            inteiros[i]++;
-            printk("%i\n",inteiros[i]);
-        }*/
 
         //Conversao de inteiro para hexa
         for(i = 0; i < cont; i++){                  
-            sprintf(hexa+i*2,"%x", inteiros[i]);
-        }        
-        
-        tamEncrypted=strlen(hexa);
-        strcpy(encrypted,hexa);
-
-    }else if(op == 'd'){
-        printk("CRYPTO--> Descriptografando..\n");
-        
-        //conversao de hexa pra ascii
-        buf = 0;
-        for(i =0;i<strlen(input);i++){
-            if(i%2 !=0){
-                sprintf(decrypted+i/2,"%c",hex_to_ascii(buf,input[i]));
-            }else{
-                buf=input[i];
-            }
+            sprintf(decrypted+i/2,"%x", inteiros[i]);
         }
-        printk("DEBUG HEX2ASC %s\n",decrypted);
-        
-        //descriptografia aqui
-        tamDecrypted=strlen(decrypted);
-        strcpy(decrypted,decrypted);
+
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
@@ -271,7 +280,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         strcpy(hash,"Nao implementado ainda :(");
     }
 
-    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
+    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",sizeof(input));
     return len;
 }
 
@@ -304,10 +313,8 @@ static unsigned int perform_crypto_decrypto(struct skcipher_def *sk,int action){
     return rc;
 }
 
-static int init_cifra(char *input,char *iv,unsigned char *key,int key_len){
-    struct skcipher_def sk;
-    struct crypto_skcipher *skcipher = NULL;
-    struct skcipher_request *req = NULL;
+static int init_cifra(char *iv,unsigned char *key,int key_len){
+ 
     int ret = -EFAULT;
 
     skcipher = crypto_alloc_skcipher("cbc-aes-aesni",0,0);
@@ -333,15 +340,11 @@ static int init_cifra(char *input,char *iv,unsigned char *key,int key_len){
     sk.req = req;
 
 
-    /* 
-    sg_init_one(&sk,sg,input,16);
-    skcipher_request_set_crypt(rq,&sk.sg,&sk.sg,16,iv);
-    init_completion(&sk.result.completion);
-    
-     */
+     
+ 
 
     
-
+    return ret;
     
 out:
     if(skcipher)
@@ -353,23 +356,7 @@ out:
 }
 
 
-
-static int hex_to_int(char c){
-    int first = c/16 - 3;
-    int second = c%16;
-    int result = first*10+second;
-    if(result>9) result--;
-    return result;
-}
-
-static int hex_to_ascii(char c,char d){
-    int high = hex_to_int(c) * 16;
-    int low = hex_to_int(d);
-    return high+low;
-}
-
 static int op_pos(char * str){
-
 int i;
     for (i=0;i<strlen(str);i++){
 

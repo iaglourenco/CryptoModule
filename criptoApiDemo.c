@@ -113,10 +113,9 @@ static void cryptoapi_demo(void){
         skcipher_request_set_crypt(req, &sk.sg, &sk.sg, 8, iv);
         init_completion(&sk.result.completion);
 
-
         ret = crypto_skcipher_encrypt(sk.req);
         if (ret) {
-                printk(KERN_ERR PFX "encryption failed");
+                printk(KERN_ERR PFX "encryption failed erro %d");
                 goto out_kfree;
         }
 
