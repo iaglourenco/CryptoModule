@@ -14,6 +14,8 @@
 
 #define TAM_BUFFER 256
 static char recebido[TAM_BUFFER];
+void converteHexa(char *string, char *hexa);
+void insereOpcInicio(char *entrada, char *saida, char opc);
 
 int main(int argc, char *argv[]){
 
@@ -21,6 +23,8 @@ int main(int argc, char *argv[]){
    int option=-99;
    int ret,crypto;
    char *operacao = argv[1];
+   char msgKernelHexa[200];
+   char saida[200];
    if(argc==1) operacao = "none";
    
    if(strcmp(operacao,"c")==0) {
@@ -60,22 +64,34 @@ int main(int argc, char *argv[]){
    {
       case 1:
          printf("--:Criptografia:--\n");
-         ret = write(crypto,argv[2],strlen(argv[2]));
+
+         converteHexa(argv[2], msgKernelHexa);
+
+         msgKernelHexa[0] = 'c';
+
+         printf("msgKernelHexa %s", msgKernelHexa);
+
+         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
          }
+         
          ret = read(crypto,recebido,TAM_BUFFER);
          if(ret < 0){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",argv[2]);
+         printf("\nDado enviado: %s",msgKernelHexa+1);
          printf("\nDado criptografado: %s\n",recebido);   
       break;
+
       case 2:
          printf("--<Descriptografia>--\n");
-         ret = write(crypto,argv[2],strlen(argv[2]));
+          
+         insereOpcInicio(argv[2], msgKernelHexa, 'd'); 
+
+         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
@@ -85,10 +101,11 @@ int main(int argc, char *argv[]){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",argv[2]);
+         printf("\nDado enviado: %s",msgKernelHexa+1);
          printf("\nDado descriptografado: %s\n",recebido); 
 
       break;
+
       case 3:
          printf("-#-Gerar Hash-#-\n");
          ret = write(crypto,argv[2],strlen(argv[2]));
@@ -101,7 +118,7 @@ int main(int argc, char *argv[]){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",argv[2]);
+         printf("\nDado enviado: %s",msgKernelHexa+1);
          printf("\nHash: %s\n",recebido); 
       
       break;
@@ -117,9 +134,28 @@ int main(int argc, char *argv[]){
       printf("Sintaxe invalida!!\n\n Exemplo: ./crypto [cdh] [DADO]... Tente './crypto -h' para ajuda.\n");
       return 0;
       break;
-   }
-
-
-   
+   }   
    return 0;
+}
+
+
+
+void converteHexa(char *string, char *hexa){
+   int tam = strlen(string);
+   int i;
+   for(i = 0; i < tam - 2; i++){        
+      sprintf(hexa+(i*2+1),"%x", string[i]);
+   } 
+   sprintf(hexa+(i*2+1),"%c", '\0');
+}
+
+void insereOpcInicio(char *entrada, char *saida, char opc){
+   int tam, i;
+   tam = strlen(entrada);
+
+   for(i = 0; i < tam -2; i++){
+      saida[i+1] = entrada[i];
+   }
+   saida[i+1] = '\0';
+   saida[0] = opc;
 }
