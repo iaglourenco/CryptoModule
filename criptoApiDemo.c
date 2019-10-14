@@ -30,15 +30,16 @@ struct tcrypt_result {
 
 /* tie all data structures together */
 struct skcipher_def {
-    struct scatterlist sg;
+    struct scatterlist sg[3];
     struct crypto_skcipher *tfm;
     struct skcipher_request *req;
     struct tcrypt_result result;
+    struct crypto_wait wait;
 };
 
 /* ====== CryptoAPI ====== */
 
-#define DATA_SIZE       8
+#define DATA_SIZE       16
 
 
 static void
@@ -55,7 +56,8 @@ static void cryptoapi_demo(void){
         
         /* config options */
         char *algo = "aes";
-        char key[16], iv[16];
+        unsigned char key[32];
+        char *iv;
 
         /* local variables */
         struct skcipher_request *req ;
@@ -64,16 +66,21 @@ static void cryptoapi_demo(void){
         int ret;
         char *input, *encrypted, *decrypted;
 
-        memset(key, 1, sizeof(key)); //Gera uma key preenchida com um
-        memset(iv, 2, sizeof(iv));   //Gera um iv preenchido com dois
+        memset(key, 5, sizeof(key)); //Gera uma key preenchida com um
 
-        skcipher = crypto_alloc_skcipher ("cbc-aes-aesni", 0, 0);
+        
+        pr_info("Key: %s\n", key);
+
+        
+        skcipher = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
+
         req = skcipher_request_alloc(skcipher, GFP_KERNEL);
 
         if (req == NULL) {
                 printk("failed to load transform for %s \n", algo);
                 return;
         }
+
 
         ret = crypto_skcipher_setkey(skcipher, key, sizeof(key));
 
@@ -87,6 +94,13 @@ static void cryptoapi_demo(void){
                 printk(KERN_ERR PFX "kmalloc(input) failed\n");
                 goto out;
         }
+        
+        iv = kmalloc(16, GFP_KERNEL);
+        if (!iv) {
+                printk(KERN_ERR PFX "kmalloc(input) failed\n");
+                goto out;
+        }
+
 
         encrypted = kmalloc(16, GFP_KERNEL);
         if (!encrypted) {
@@ -103,36 +117,43 @@ static void cryptoapi_demo(void){
                 goto out;
         }
 
-        memset(input, 8, DATA_SIZE);
+        memset(iv, 2, DATA_SIZE);
+        memset(input, 97, DATA_SIZE);
+        
+        sprintf(input,"%s","Lucas Rodrigues ");
+        
+
+        pr_info("input: %s\n", input);
 
         sk.tfm = skcipher;
         sk.req = req;
 
-
-        sg_init_one(&sk.sg, input, 8);
-        skcipher_request_set_crypt(req, &sk.sg, &sk.sg, 8, iv);
-        init_completion(&sk.result.completion);
-
-        ret = crypto_skcipher_encrypt(sk.req);
-        if (ret) {
-                printk(KERN_ERR PFX "encryption failed erro %d");
-                goto out_kfree;
-        }
-
-        sg_copy_to_buffer(&sk.sg, 8, encrypted, 8);
+        sg_init_one(&sk.sg[0], input, 16);
+        sg_init_one(&sk.sg[1], encrypted, 16);
+        sg_init_one(&sk.sg[2], decrypted, 16);
         
 
-        skcipher_request_set_crypt(req, &sk.sg, &sk.sg, 8, iv);
-        init_completion(&sk.result.completion);       
+        skcipher_request_set_crypt(req, &sk.sg[0], &sk.sg[1], 16, iv);
+        crypto_init_wait(&sk.wait);
+        init_completion(&sk.result.completion);
 
-
-        ret = crypto_skcipher_decrypt(sk.req);
+        ret = crypto_skcipher_encrypt(req);
         if (ret) {
-                printk(KERN_ERR PFX "decryption failed");
+                printk(KERN_ERR PFX "encryption failed erro");
                 goto out_kfree;
         }
+           
+        memset(iv, 2, DATA_SIZE);        
 
-        sg_copy_to_buffer(&sk.sg, 8, decrypted, 8);
+        skcipher_request_set_crypt(req, &sk.sg[1], &sk.sg[2], 16, iv);
+        crypto_init_wait(&sk.wait);
+        init_completion(&sk.result.completion);
+
+        ret = crypto_skcipher_decrypt(req);
+        if (ret) {
+                printk(KERN_ERR PFX "encryption failed erro");
+                goto out_kfree;
+        }
 
         printk(KERN_ERR PFX "Input: "); hexdump(input, DATA_SIZE);
         printk(KERN_ERR PFX "Encrypted: "); hexdump(encrypted, DATA_SIZE);
