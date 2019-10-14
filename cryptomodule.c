@@ -20,14 +20,14 @@
 
 #define DEVICE_NAME "crypto"    //Nome do dispositivo, aparece em /dev/crypto 
 #define CLASS_NAME "cryptomodule" 
-
+#define BLOCK_SIZE_C 16
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Adriano Munin, Fabio Irokawa, Iago Lourenço, Lucas Coutinho");
 MODULE_DESCRIPTION("Modulo de criptografia");
 MODULE_VERSION("0.1");
 
-//Modulo
+
 
 static int majorNumber; //Guarda o numero do dispositivo
 static int numAberturas = 0; //Conta quantas vezes o dispositivo foi aberto
@@ -36,16 +36,17 @@ static struct class* cryptoClass = NULL; //O ponteiro para a struct de classe
 static struct device* cryptoDev = NULL;//O ponteiro para a struct de dispositivo 
 
 /* Struct que guarda o resultado da cripto ou descriptografia */ 
-struct tcrypt_result{
+struct tcrypt_result {
     struct completion completion;
     int err;
 };
 /* Junção com todas as structs utilizadas pelas funçoes de cryptografia */
-static struct skcipher_def{
-    struct scatterlist sg;
+struct skcipher_def {
+    struct scatterlist sg[3];
     struct crypto_skcipher *tfm;
     struct skcipher_request *req;
     struct tcrypt_result result;
+    struct crypto_wait wait;
 };
 /*
 * module_param_array(name, type, num, perm);
@@ -56,28 +57,26 @@ static struct skcipher_def{
 * The fourth argument is the permission bits
 */
 
-#define TAM_IV 16
-#define TAM_KEY 16
-
-static char *iv;
-static char *key;//Guarda o array de strings recebidos do usuario
+char *iv;
+char *key;//Guarda o array de strings recebidos do usuario
 static int tamIv=0;
 static int tamKey=0; //Para se lembrar do tamanho das strings
+//static char cryptokey[32];
+//static char cryptoiv[32];
 
 static DEFINE_MUTEX(crypto_mutex);
-
-static char input;
-static char encrypted;
-static char decrypted;
-static char hash;
-
-static struct skcipher_def sk;
-static struct crypto_skcipher *skcipher = NULL;
-static struct skcipher_request *req = NULL;
+static char input[256]={0};
+static int tamInput;
+static char encrypted[256]={0};
+static int tamEncrypted; 
+static char decrypted[256]={0};
+static int tamDecrypted;
+static char hash[256]={0};
+static int tamHash;
 int pos,i;
 char op;
-char hexa[512]={0};
-int inteiros[256];
+char ascii[16]={0};
+char bloco[16]={0};
 char buf;
 
 module_param(iv,charp,0000);
@@ -91,9 +90,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
-static int op_pos(char *);
-static unsigned int perform_crypto_decrypto(struct skcipher_def*,int);
-static int init_cifra(char*,char*,unsigned char*,int );
+static void init_cifra(char *msgInput, char *msgOutput, int opc);
+static void ascii2hexa(unsigned char *in, char *out, int len);
 
 //Estrutura que define qual função chamar quando 
 //o dispositivo é requisitado
@@ -108,59 +106,71 @@ static struct file_operations fops =
 //função do nascimento do módulo
 static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
-    int ret=0;
-    if(iv!=NULL) tamIv=strlen(iv);
-    if(key!=NULL) tamKey=strlen(key);    
+    
+    /*
+    *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
+    */
+        if(iv!=NULL) tamIv=strlen(iv);
         
-
-    if(tamIv < TAM_IV || tamKey < TAM_KEY) {
-        printk(KERN_ALERT "CRYPTO--> Chave ou iv invalidas, encerrando!");
-        return -EINVAL;
-    }
-    printk(KERN_INFO "CRYPTO--> IV lenght=%d\n",tamIv);
-    printk(KERN_INFO "CRYPTO--> KEY lenght=%d\n",tamKey);
+        if(key!=NULL) tamKey=strlen(key);    
+        
+        if(tamIv == 0 || tamKey == 0) {
+            printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
+            return -EINVAL;
+        }
+        printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
+        printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
         
     
-    /*Tento alocar um majorNumber para o dispositivo*/
+    /*Tento alocar um majorNumber para o dispositivo
+    *   @param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
+    *           2 - o nome do filho
+    *            3 - a struct com as funçoes que podem ser efetuadas  
+    *    @return: o mj do dispositivo se deu certo
+    *             ou uma flag de erro 
+    */
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
     if(majorNumber<0){//majorNumbers sao numeros entre 0 e 256
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
-        ret = majorNumber;
-        goto free;
+        return majorNumber;
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
-    /*Registra a classe do dispositivo    */
+    /*Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
+    *    @param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
+    *            2 - nome da classe
+    *    @return: flag de erro
+    *           struct class  
+    *    Há código repetido aqui, pois caso haja falha no registro de
+    *    classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
+    */
     cryptoClass = class_create(THIS_MODULE,CLASS_NAME);
     if(IS_ERR(cryptoClass)){
+        unregister_chrdev(majorNumber,DEVICE_NAME);
         printk(KERN_ALERT "CRYPTO--> FALHA AO REGISTRAR CLASSE\n");
-        ret = PTR_ERR(cryptoClass);
-        goto free;
+        return PTR_ERR(cryptoClass);
     }
     printk(KERN_INFO "CRYPTO--> Classe registrada\n");
 
-    /*Registra o dispositivo*/
+    /*Registra o dispositivo
+    *    @param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
+    *            2 - caso o device seja dependente de outro passariamos a struct device desse device
+    *            3 - cria um objeto device com o nosso mj e mn
+    *            4 - nao sei :)
+    *            5 - nome do device
+    *    @return: a struct device
+    *            flag de erro  
+    */
     cryptoDev=device_create(cryptoClass,NULL,MKDEV(majorNumber,0),NULL,DEVICE_NAME);
     if(IS_ERR(cryptoDev)){//repeated code :(
-       
+        class_destroy(cryptoClass);
+        unregister_chrdev(majorNumber,DEVICE_NAME);
         printk(KERN_ALERT "CRYPTO--> FALHA AO REGISTRAR DISPOSITIVO\n");
-        ret = PTR_ERR(cryptoDev);
-        goto free;
+        return PTR_ERR(cryptoDev);
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
 
-    printk(KERN_INFO "Inicilizando cryptoAPI\n");
-    init_cifra(iv,key,tamKey);
-
-    goto ret;
-
-
-free:
-    unregister_chrdev(majorNumber,DEVICE_NAME);
-    if(cryptoClass)
-        class_destroy(cryptoClass);
-ret:
-    return ret;
+    return 0;
 }
 
 //função assassinadora do módulo :-)
@@ -170,8 +180,6 @@ static void __exit crypto_exit(void){
     class_unregister(cryptoClass);
     class_destroy(cryptoClass);
     unregister_chrdev(majorNumber,DEVICE_NAME);
-    crypto_free_skcipher(skcipher);
-    skcipher_request_free(req);
     printk(KERN_INFO "CRYPTO--> Adeus kernel cruel!!\n");
 }
 
@@ -194,17 +202,18 @@ static int dev_release(struct inode *inodep,struct file *filep){
 
 static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offset){
     int erros=0;
-  
+    //TODO aqui verificar se e para enviar o decrypted ou o encrypted
+    
     if(op == 'c'){
-        erros=copy_to_user(buffer,encrypted,sizeof(encrypted));
+        erros=copy_to_user(buffer,encrypted,tamEncrypted);
     }else if(op == 'd'){
-        erros=copy_to_user(buffer,decrypted,sizeof(decrypted));
+        erros=copy_to_user(buffer,decrypted,tamDecrypted);
     }else{
-        erros=copy_to_user(buffer,hash,sizeof(hash));
+        erros=copy_to_user(buffer,hash,tamHash);
     }
     
     if(erros==0){
-        printk(KERN_INFO "CRYPTO--> Mensagem enviada! OP=%c\n",op);
+        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
         return 0;
     }else{
         printk(KERN_ALERT "CRYPTO--> Falha ao enviar mensagem\n");
@@ -213,66 +222,36 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 }
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
-    char temp[3]; //variaveis temporarias de conversao
+    char temp[3];
     int cont = 0;
+    strcpy(input, buffer+1);
+    op = buffer[0];
+    tamInput = strlen(input); 
 
-    strcpy(input, buffer);
-    pos = op_pos(input);//encontro o tipo de operacao requerida
-    op = input[pos];
-    input[pos-1] = '\0';
-    
-    kmalloc(sizeof(input),GFP_KERNEL);
+    //Conversao de hexa para ascii
+    for(i = 0; i < tamInput; i+=2){
+        temp[0]  = input[i];
+        temp[1]  = input[i+1];
+        temp[2]  = '\0'; 
+        sscanf(temp, "%hhx", &ascii[cont]);
+        cont++;    
+    }
 
     if(op == 'c'){
-        printk("CRYPTO--> Criptografando..\n");
-        
-        //Conversao de hexa para inteiro
-        for(i = 0; i < sizeof(input); i+=2){
-            temp[0]  = input[i];
-            temp[1]  = input[i+1];
-            temp[2]  = '\0'; 
-            sscanf(temp, "%x", &inteiros[cont]);
-            cont++;    
-        }
+        printk("CRYPTO--> Criptografando..\n"); 
+        //Aqui entra a criptografia!
+        init_cifra(ascii, bloco, 1);
+        ascii2hexa(bloco, encrypted, 16);       
+        tamEncrypted=strlen(encrypted);
+        printk("DEBUG ASC2HEX %s\n",encrypted);
 
-        sg_init_one(&sk.sg,inteiros,sizeof(inteiros));
-        skcipher_request_set_crypt(req,&sk.sg,&sk.sg,16,iv);
-        init_completion(&sk.result.completion);
-        perform_crypto_decrypto(sk,1);
-        sg_copy_to_buffer(&sk.sg, 8, encrypted, 8);
-
-        
-        //Aqui entra a criptografia, criptografando o vetor inteiros
-   
-        //Conversao de inteiro para hexa
-        for(i = 0; i < cont; i++){                  
-            sprintf(encrypted+i*2,"%x", inteiros[i]);
-        }        
-        
     }else if(op == 'd'){
-        printk("CRYPTO--> Descriptografando..\n");
-        
-        //Conversao de hexa para inteiro
-        for(i = 0; i < sizeof(input); i+=2){
-            temp[0]  = input[i];
-            temp[1]  = input[i+1];
-            temp[2]  = '\0'; 
-            sscanf(temp, "%x", &inteiros[cont]);
-            cont++;    
-        }
-        
-        //Aqui entra a descriptografia, descriptografando o vetor inteiros
-        sg_init_one(&sk.sg,inteiros,sizeof(inteiros));
-        skcipher_request_set_crypt(req,&sk.sg,&sk.sg,sizeof(inteiros),iv);
-        init_completion(&sk.result.completion);
-        perform_crypto_decrypto(sk,0);
-
-
-        //Conversao de inteiro para hexa
-        for(i = 0; i < cont; i++){                  
-            sprintf(decrypted+i/2,"%x", inteiros[i]);
-        }
-
+        printk("CRYPTO--> Descriptografando..\n"); 
+        //descriptografia aqui
+        init_cifra(ascii, bloco,  2);
+        ascii2hexa(bloco, decrypted, 16); 
+        tamDecrypted=strlen(decrypted);
+        printk("DEBUG HEX2ASC %s\n", decrypted);
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
@@ -280,94 +259,96 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         strcpy(hash,"Nao implementado ainda :(");
     }
 
-    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",sizeof(input));
+    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
     return len;
 }
 
-//Faz a criptografia ou descriptografia com os dados preenchidos em skcipher
-static unsigned int perform_crypto_decrypto(struct skcipher_def *sk,int action){
-    
-    int rc = 0;
-
-    if(action == 1 ){
-        rc=crypto_skcipher_encrypt(sk->req);
-    }else{
-        rc=crypto_skcipher_decrypt(sk->req);
+static void ascii2hexa(unsigned char *in, char *out, int len){
+    int i = 0;
+    while (i < len){        
+        sprintf(out+i*2, "%02x", *in++);
+        i++;       
     }
-    
-    switch(rc){
-        case 0:
-            break;
-            case -EINPROGRESS:
-            case -EBUSY:
-            rc = wait_for_completion_interruptible(&sk->result.completion);
-            if(!rc && !sk->result.err){
-                reinit_completion(&sk->result.completion);
-                break;
+}
+
+static void init_cifra(char *msgInput, char *msgOutput, int opc){
+        /* local variables */
+        struct skcipher_request *req ;
+        struct crypto_skcipher *skcipher = NULL;
+        struct skcipher_def sk;
+        int ret, i;
+        char *ivLocal;
+        char saida[16];
+        char entrada[16];
+
+        skcipher = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
+
+        req = skcipher_request_alloc(skcipher, GFP_KERNEL);
+        if (req == NULL) {
+                printk("failed to load transform for aes");
+                goto out;
+        }
+
+        ret = crypto_skcipher_setkey(skcipher, key, strlen(key));
+        if (ret) {
+                printk(KERN_ERR  "setkey() failed\n");
+                goto out;
+        }
+
+        skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
+            crypto_req_done,
+            &sk.wait);
+        
+        ivLocal = kmalloc(strlen(iv), GFP_KERNEL);
+        if (!ivLocal) {
+                printk(KERN_ERR  "kmalloc(input) failed\n");
+                goto out;
+        }
+
+        strcpy(ivLocal, iv);
+        for(i = 0; i < 16; i++){
+            entrada[i] = msgInput[i];
+        } 
+
+        sk.tfm = skcipher;
+        sk.req = req;
+
+        sg_init_one(&sk.sg[0], entrada, 16);
+        sg_init_one(&sk.sg[1], saida, 16);
+
+        if(opc == 1){  
+            skcipher_request_set_crypt(req, &sk.sg[0], &sk.sg[1], 16, ivLocal);
+            crypto_init_wait(&sk.wait);
+            init_completion(&sk.result.completion);
+        
+            ret = crypto_wait_req(crypto_skcipher_encrypt(sk.req), &sk.wait);
+            if (ret) {
+                printk(KERN_ERR  "encryption failed erro");
+                goto out;
             }
-        default:
-            printk(KERN_ALERT "CRYPTO--> crypto retornou rc=%d err=%d\n",rc,sk->result.err);
-            break;    
-    }
-    init_completion(&sk->result.completion);
-    return rc;
-}
-
-static int init_cifra(char *iv,unsigned char *key,int key_len){
- 
-    int ret = -EFAULT;
-
-    skcipher = crypto_alloc_skcipher("cbc-aes-aesni",0,0);
-    if(IS_ERR(skcipher)){
-        printk(KERN_ALERT "CRYPTO--> Falha ao alocar skcipher\n");
-        return PTR_ERR(skcipher);
-    }
-
-    req = skcipher_request_alloc(skcipher,GFP_KERNEL);
-    if(!req){
-        printk(KERN_ALERT "CRYPTO--> Falha ao alocar skcipher request\n");
-        ret = -ENOMEM;
-        goto out;
-    }
-
-    if(crypto_skcipher_setkey(skcipher,key,key_len)){
-        printk(KERN_ALERT "CRYPTO--> Falha ao definir chave\n");
-        ret = -EAGAIN;
-        goto out;
-    }
-
-    sk.tfm = skcipher;
-    sk.req = req;
-
-
-     
- 
-
-    
-    return ret;
-    
-out:
-    if(skcipher)
-        crypto_free_skcipher(skcipher);
-    if(req)
-        skcipher_request_free(req);
-    return ret;
-
-}
-
-
-static int op_pos(char * str){
-int i;
-    for (i=0;i<strlen(str);i++){
-
-        if(str[i] == ':'){
-            if(str[i+1] == 'c' || str[i+1] == 'd' || str[i+1] == 'h'){
-                return i+1;
+        }else{
+            skcipher_request_set_crypt(req, &sk.sg[0], &sk.sg[1], 16, ivLocal);
+            crypto_init_wait(&sk.wait);
+            init_completion(&sk.result.completion);
+        
+            ret = crypto_wait_req(crypto_skcipher_decrypt(sk.req), &sk.wait);
+            if (ret) {
+                printk(KERN_ERR  "encryption failed erro");
+                goto out;
             }
         }
+
+    for(i = 0; i < 16; i++){
+        msgOutput[i] = saida[i];
     }
-return 0;
-}    
+
+    kfree(ivLocal);
+out:
+    if (skcipher)
+        crypto_free_skcipher(skcipher);
+    if (req)
+        skcipher_request_free(req);       
+}
 
 module_init(crypto_init);
 module_exit(crypto_exit);
