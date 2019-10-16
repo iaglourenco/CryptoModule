@@ -24,24 +24,21 @@ int main(int argc, char *argv[]){
    int ret,crypto;
    char *operacao = argv[1];
    char msgKernelHexa[200];
-   char saida[200];
+   char temp[200];
    if(argc==1) operacao = "none";
    
    if(strcmp(operacao,"c")==0) {
       if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
-      argv[2]=strcat(argv[2],":c");
       option=1;
    }
    if(strcmp(operacao,"d")==0) {
       if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
-      argv[2]=strcat(argv[2],":d");
       option=2;
    }
    
    if(strcmp(operacao,"h")==0) {
       if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
-      argv[2]=strcat(argv[2],":h");
-      option=3;
+       option=3;
    }
    if(strcmp(operacao,"-h")==0) option=0;
 
@@ -65,12 +62,10 @@ int main(int argc, char *argv[]){
       case 1:
          printf("--:Criptografia:--\n");
 
-         converteHexa(argv[2], msgKernelHexa);
+         converteHexa(argv[2], temp);
 
-         msgKernelHexa[0] = 'c';
-
-         printf("msgKernelHexa %s", msgKernelHexa);
-
+         insereOpcInicio(temp,msgKernelHexa,'c');
+         
          ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
@@ -89,8 +84,10 @@ int main(int argc, char *argv[]){
       case 2:
          printf("--<Descriptografia>--\n");
           
-         insereOpcInicio(argv[2], msgKernelHexa, 'd'); 
+         converteHexa(argv[2], temp);
 
+         insereOpcInicio(temp,msgKernelHexa,'d');
+         
          ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
@@ -108,7 +105,13 @@ int main(int argc, char *argv[]){
 
       case 3:
          printf("-#-Gerar Hash-#-\n");
-         ret = write(crypto,argv[2],strlen(argv[2]));
+
+         converteHexa(argv[2], temp);
+
+         insereOpcInicio(temp,msgKernelHexa,'h');
+         
+
+         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
@@ -140,22 +143,23 @@ int main(int argc, char *argv[]){
 
 
 
-void converteHexa(char *string, char *hexa){
+void converteHexa(char *string, char hexa[]){
    int tam = strlen(string);
    int i;
-   for(i = 0; i < tam - 2; i++){        
-      sprintf(hexa+(i*2+1),"%x", string[i]);
-   } 
-   sprintf(hexa+(i*2+1),"%c", '\0');
+   for(i = 0; i < tam; i++){        
+      sprintf(hexa+i*2,"%02x", string[i]);
+   }
+   hexa[(i*2)+1]='\0'; 
 }
 
-void insereOpcInicio(char *entrada, char *saida, char opc){
+void insereOpcInicio(char entrada[], char saida[], char opc){
    int tam, i;
    tam = strlen(entrada);
 
-   for(i = 0; i < tam -2; i++){
+   saida[0]= opc;
+   for(i = 0; i < tam; i++){
       saida[i+1] = entrada[i];
    }
-   saida[i+1] = '\0';
-   saida[0] = opc;
+   saida[i+1]='\0';
+   
 }
