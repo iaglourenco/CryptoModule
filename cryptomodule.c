@@ -67,16 +67,19 @@ static int tamKey=0; //Para se lembrar do tamanho das strings
 
 static DEFINE_MUTEX(crypto_mutex);
 static int tamInput;
-static char encrypted[256]={0};
+static char *encrypted;
 static int tamEncrypted; 
-static char decrypted[256]={0};
+static char *decrypted;
 static int tamDecrypted;
 static char hash[41]={0};
+static char hashHexa[41]={0};
 static int tamHash;
-int pos,i;
-char op;
-//char ascii[16]={0};
-char buf;
+static int i;
+static char op;
+static char *ascii;
+static char *input;
+static struct crypto_shash *sha1;
+static struct shash_desc *shash;
 
 module_param(iv,charp,0000);
 MODULE_PARM_DESC(iv,"Vetor de inicialização");
@@ -108,10 +111,7 @@ static struct file_operations fops =
 //função do nascimento do módulo
 static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
-    
-    /*
-    *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
-    */
+
         if(iv!=NULL) tamIv=strlen(iv);
         
         if(key!=NULL) tamKey=strlen(key);    
@@ -124,13 +124,7 @@ static int __init crypto_init(void){
         printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
         
     
-    /*Tento alocar um majorNumber para o dispositivo
-    *   @param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
-    *           2 - o nome do filho
-    *            3 - a struct com as funçoes que podem ser efetuadas  
-    *    @return: o mj do dispositivo se deu certo
-    *             ou uma flag de erro 
-    */
+    /*Tento alocar um majorNumber para o dispositivo*/
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
     if(majorNumber<0){//majorNumbers sao numeros entre 0 e 256
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
@@ -138,14 +132,7 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
-    /*Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
-    *    @param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
-    *            2 - nome da classe
-    *    @return: flag de erro
-    *           struct class  
-    *    Há código repetido aqui, pois caso haja falha no registro de
-    *    classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
-    */
+    /*Registra a classe do dispositivo*/
     cryptoClass = class_create(THIS_MODULE,CLASS_NAME);
     if(IS_ERR(cryptoClass)){
         unregister_chrdev(majorNumber,DEVICE_NAME);
@@ -154,15 +141,7 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Classe registrada\n");
 
-    /*Registra o dispositivo
-    *    @param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
-    *            2 - caso o device seja dependente de outro passariamos a struct device desse device
-    *            3 - cria um objeto device com o nosso mj e mn
-    *            4 - nao sei :)
-    *            5 - nome do device
-    *    @return: a struct device
-    *            flag de erro  
-    */
+    /*Registra o dispositivo*/
     cryptoDev=device_create(cryptoClass,NULL,MKDEV(majorNumber,0),NULL,DEVICE_NAME);
     if(IS_ERR(cryptoDev)){//repeated code :(
         class_destroy(cryptoClass);
@@ -198,6 +177,23 @@ static int dev_open(struct inode *inodep,struct file *filep){
 
 static int dev_release(struct inode *inodep,struct file *filep){
     mutex_unlock(&crypto_mutex);
+    if(ascii)
+        kfree(ascii);
+        printk("kfree ascii");
+    if(input)
+        kfree(input);
+        printk("kfree input");
+    //if(decrypted)
+       // kfree(decrypted);
+        //printk("kfree decrypted");
+    //if(encrypted)
+       // kfree(encrypted);
+       // printk("kfree encrypted");
+    if(shash)
+        kfree(shash);
+        printk("kfree shash");
+    if(sha1)
+        crypto_free_shash(sha1);
     printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n");
     return 0;
 }
@@ -225,31 +221,41 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
 
 static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_t *offset){
     char temp[3];
-    char *ascii;
-    char input[256]={0};
+  
     char blocoIn[16]={0};
     char blocoCrypto[16]={0};
     int cont = 0, indice;
 
+    if(len % 16){
+        input = kmalloc(len + 32,GFP_KERNEL);
+    }else{
+        input = kmalloc(len,GFP_KERNEL);    
+    }
 
-    strcpy(input, buffer+1);
+    if(!input){
+        printk(KERN_ERR "kmalloc(input) failed\n");
+        return -ENOMEM;
+    }
+
+    if(len % 16)
+        ascii = kmalloc(len/2 + 16, GFP_KERNEL);
+    else
+        ascii = kmalloc(len/2, GFP_KERNEL);
+    if (!ascii) {
+        printk(KERN_ERR  "kmalloc(ascii) failed\n");
+        return -ENOMEM;
+    }
+
+
+    memcpy(input,buffer+1,len-1);
     op = buffer[0];
-    tamInput = strlen(input);
 
-    if(op == 'c') padding(input, tamInput); //Caso a opcao seja de criptgrafia, o padding eh feito na entrada.
-
-
-    ascii = kmalloc(tamInput/2 + 16, GFP_KERNEL);
-        if (!ascii) {
-                printk(KERN_ERR  "kmalloc(input) failed\n");
-                return -1;
-        }
-    tamInput = strlen(input);
+    if(op == 'c') padding(input, len-1); //Caso a opcao seja de criptgrafia, o padding eh feito na entrada.
+   
     //Conversao de hexa para ascii
-    for(indice = 0; indice < tamInput; indice+=2){
+    for(indice = 0; indice < len-1; indice+=2){
         temp[0]  = input[indice];
-        temp[1]  = input[indice+1];
-        temp[2]  = '\0'; 
+        temp[1]  = input[indice+1]; 
         sscanf(temp, "%hhx", &ascii[cont]);
         cont++;    
     }    
@@ -270,8 +276,12 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
             }
         } 
 
+        encrypted=kmalloc(sizeof(ascii)*2,GFP_KERNEL);
+        if(!encrypted){
+            printk(KERN_ERR "kmalloc(encrypted) error");
+        }
+
         ascii2hexa(ascii, encrypted, cont);//ascii tem todos os blocos criptografados
-        tamEncrypted=strlen(encrypted);
         printk("DEBUG ASC2HEX %s\n",encrypted);
 
     }else if(op == 'd'){
@@ -290,20 +300,25 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
             }
         }
 
+        decrypted=kmalloc(sizeof(ascii)*2,GFP_KERNEL);
+        if(!decrypted){
+            printk(KERN_ERR "kmalloc(decrypted) error\n");
+        }
+
         ascii2hexa(ascii, decrypted, cont);
-        tamDecrypted=strlen(decrypted);
+        tamDecrypted=sizeof(decrypted);
         unpadding(decrypted, tamDecrypted);//Na descriptografia o unpadding eh feito na saida         
         printk("DEBUG HEX2ASC %s\n", decrypted);
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
-        init_hash(ascii, encrypted, cont);
-        ascii2hexa(encrypted, hash, 40);
+        init_hash(ascii, hashHexa, cont);
+        ascii2hexa(hashHexa, hash, 40);
         tamHash = 40;
     }
 
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
-    kfree(ascii);
+    
     return len;
 }
 
@@ -333,7 +348,7 @@ static void init_cifra(char *msgInput, char *msgOutput, int opc){
                 goto out;
         }
 
-        ret = crypto_skcipher_setkey(skcipher, key, strlen(key));
+        ret = crypto_skcipher_setkey(skcipher, key, 16);
         if (ret) {
                 printk(KERN_ERR  "setkey() failed\n");
                 goto out;
@@ -343,13 +358,13 @@ static void init_cifra(char *msgInput, char *msgOutput, int opc){
             crypto_req_done,
             &sk.wait);
         
-        ivLocal = kmalloc(strlen(iv), GFP_KERNEL);
+        ivLocal = kmalloc(16, GFP_KERNEL);
         if (!ivLocal) {
                 printk(KERN_ERR  "kmalloc(input) failed\n");
                 goto out;
         }
 
-        strcpy(ivLocal, iv);
+        memcpy(ivLocal,iv,16);
         for(i = 0; i < 16; i++){
             entrada[i] = msgInput[i];
         } 
@@ -386,12 +401,14 @@ static void init_cifra(char *msgInput, char *msgOutput, int opc){
         msgOutput[i] = saida[i];
     }
 
-    kfree(ivLocal);
 out:
     if (skcipher)
         crypto_free_skcipher(skcipher);
     if (req)
         skcipher_request_free(req);       
+    if(ivLocal){
+        kfree(ivLocal);
+    }
 }
 
 
@@ -445,20 +462,19 @@ static void unpadding(char *string, int len){ //Padrao utilizado PKCS#7
 
 
 static void init_hash(char *textIn, char *digest, int qtdChar){
-    struct crypto_shash *sha1;
-    struct shash_desc *shash;
+   
     int ret;
 
     sha1 = crypto_alloc_shash("sha1", 0, 0);
     if (IS_ERR(sha1)){
         printk(KERN_ERR  "hash failed erro: nao foi possivel alocar shash");
-        return;
+        goto freeh;
     }
 
     shash = kmalloc(40 ,GFP_KERNEL);
     if (!shash){
         printk(KERN_ERR  "hash failed erro: %i\n", ENOMEM);
-        return;
+        goto freeh;
     }
 
     shash->tfm = sha1;
@@ -467,25 +483,26 @@ static void init_hash(char *textIn, char *digest, int qtdChar){
     ret = crypto_shash_init(shash);
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
-        return;
+        goto freeh;
     }        
         
     ret = crypto_shash_update(shash, textIn, qtdChar);
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
-        return;
+        goto freeh;
     }        
         
     ret = crypto_shash_final(shash, digest);
 
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
-        return;
-    }  
-        
+        goto freeh;
+    }
 
-    kfree(shash);
-    crypto_free_shash(sha1);
+        
+freeh:
+  
+    return;
 }
 
 
