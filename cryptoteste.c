@@ -84,9 +84,7 @@ int main(int argc, char *argv[]){
       case 2:
          printf("--<Descriptografia>--\n");
           
-         converteHexa(argv[2], temp);
-
-         insereOpcInicio(temp,msgKernelHexa,'d');
+         insereOpcInicio(argv[2], msgKernelHexa, 'd');
          
          ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
