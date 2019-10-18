@@ -471,7 +471,7 @@ static void init_hash(char *textIn, char *digest, int qtdChar){
         goto freeh;
     }
 
-    shash = kmalloc(40 ,GFP_KERNEL);
+    shash = kmalloc(41 ,GFP_KERNEL);
     if (!shash){
         printk(KERN_ERR  "hash failed erro: %i\n", ENOMEM);
         goto freeh;
