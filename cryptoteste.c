@@ -88,9 +88,14 @@ int main(int argc, char *argv[]){
          
          ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
          if(ret < 0){
+	    if (ret == -1){
+            	perror("Nao e possivel descriptografar esta mensagem, tente novamente");
+            	return errno;
+         	}
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
          }
+
          ret = read(crypto,recebido,TAM_BUFFER);
          if(ret < 0){
             perror("Falha ao ler dado do dispositivo...");
