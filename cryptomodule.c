@@ -67,12 +67,12 @@ static int tamKey=0; //Para se lembrar do tamanho das strings
 static DEFINE_MUTEX(crypto_mutex);
 static int tamInput;
 static char *encrypted;
-static int tamEncrypted; 
+static int tamSaida; 
 static char *decrypted;
-static int tamDecrypted;
+//static int tamSaida;
 static char hash[41]={0};
 static char hashAscii[41]={0};
-static int tamHash;
+//static int tamSaida;
 static char *ivLocal;
 int pos,i;
 char op;
@@ -91,7 +91,7 @@ static ssize_t dev_read(struct file *,char *,size_t,loff_t * );
 static ssize_t dev_write(struct file *, const char *,size_t,loff_t *);
 static void init_cifra(char *msgInput, char *msgOutput, int opc);
 static void ascii2hexa(unsigned char *in, char *out, int len);
-static void unpadding(char *string, int len);
+static int unpadding(char *string, int len);
 static void padding(char *string, int len);
 static void init_hash(char *textIn, char *digest, int qtdChar);
 
@@ -199,8 +199,6 @@ static int dev_open(struct inode *inodep,struct file *filep){
 static int dev_release(struct inode *inodep,struct file *filep){
     mutex_unlock(&crypto_mutex);
     printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n");
-    vfree(encrypted);
-    vfree(decrypted);
     return 0;
 }
 
@@ -209,15 +207,17 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
     //TODO aqui verificar se e para enviar o decrypted ou o encrypted
     
     if(op == 'c'){
-        erros=copy_to_user(buffer,encrypted,tamEncrypted);
+        erros=copy_to_user(buffer,encrypted,tamSaida);
+        vfree(encrypted);
     }else if(op == 'd'){
-        erros=copy_to_user(buffer,decrypted,tamDecrypted);
+        vfree(decrypted);
+        erros=copy_to_user(buffer,decrypted,tamSaida);
     }else{
-        erros=copy_to_user(buffer,hash,tamHash);
+        erros=copy_to_user(buffer,hash,tamSaida);
     }
-    
+
     if(erros==0){
-        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamEncrypted);
+        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamSaida);
         return 0;
     }else{
         printk(KERN_ALERT "CRYPTO--> Falha ao enviar mensagem\n");
@@ -300,7 +300,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         }
 
         ascii2hexa(ascii, encrypted, cont);//ascii tem todos os blocos criptografados
-        tamEncrypted = cont*2;
+        tamSaida = cont*2;
         encrypted[cont*2]='\0';
         printk("DEBUG ASC2HEX %s\n",encrypted);
 
@@ -326,18 +326,21 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         }
 
         ascii2hexa(ascii, decrypted, cont);
-        tamDecrypted=strlen(decrypted);
-        unpadding(decrypted, tamDecrypted);//Na descriptografia o unpadding eh feito na saida         
+        tamSaida=cont*2;
+
+        if(unpadding(decrypted, tamSaida) == 0)//Na descriptografia o unpadding eh feito na saida         
+            return -1;
+
         printk("DEBUG HEX2ASC %s\n", decrypted);
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
         init_hash(ascii, hashAscii, cont);
         ascii2hexa(hashAscii, hash, 40);
-        tamHash = 40;
+        tamSaida = 40;
     }
 
-    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %d caracteres!\n",tamInput);
+    printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %ld caracteres!\n", len -1);
     vfree(ascii);
     vfree(input);
     vfree(ivLocal);
@@ -434,19 +437,17 @@ static void padding(char *string, int len){ //Padrao utilizado PKCS#7
         for(i = 0; i < 32; i++){            
             sprintf(string + qdtBlocos32*32 + i*2,"%02x", 16);//Converte 16 decimal para hexa (0x10)
         }
-        //string[qdtBlocos32*32 + 32] = '\0';
     }
 
     else {
         for(i = 0; i < (32 - bytesOcupados); i++){//O ultimo bloco eh preenchido com o valor da qtd de bytes livres
             sprintf(string + qdtBlocos32*32 + i*2 + bytesOcupados,"%02x", (32 - bytesOcupados)/2);
          }
-        //string[qdtBlocos32*32 + 32] = '\0';
     }
     
 }
 
-static void unpadding(char *string, int len){ //Padrao utilizado PKCS#7
+static int unpadding(char *string, int len){ //Padrao utilizado PKCS#7
     char temp[3];
     int qtdPadding;//Quantidade de bytes usados no padding
     int numP;//Numero usado para preencher o padding
@@ -457,8 +458,6 @@ static void unpadding(char *string, int len){ //Padrao utilizado PKCS#7
     temp[2]  = '\0';    
     sscanf(temp, "%x", &qtdPadding);// Converte o num de hexa para decimal
 
-    printk("qtdPadding: %i\n", qtdPadding);
-
     for(i = 0; i < qtdPadding*2; i += 2){
         temp[0]  = string[len - 2 - i];
         temp[1]  = string[len - 1 - i];
@@ -466,10 +465,11 @@ static void unpadding(char *string, int len){ //Padrao utilizado PKCS#7
         sscanf(temp, "%x", &numP);
         if(numP != qtdPadding){//Caso o numero usado para preencher seja diferente da qtd, retorna erro
             printk("Erro de padding\n");
-            return; 
+            return 0; 
         } 
     }
     string[len - qtdPadding*2] = '\0';//Descarta numeros usados no padding
+    return 1;
 }
 
 
