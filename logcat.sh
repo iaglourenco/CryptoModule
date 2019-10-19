@@ -1,3 +1,3 @@
 #!/bin/sh
 
-dmesg -w -k -H -T 
+dmesg -w -k -H -T

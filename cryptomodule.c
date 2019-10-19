@@ -70,7 +70,7 @@ static char *encrypted;
 static int tamSaida; 
 static char *decrypted;
 //static int tamSaida;
-static char hash[41]={0};
+static char hash[42]={0};
 static char hashAscii[41]={0};
 //static int tamSaida;
 static char *ivLocal;
@@ -109,9 +109,7 @@ static struct file_operations fops =
 static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
     
-    /*
-    *   Devo pegar os parametros passados(que são strings) e tranferi-los para os char vectors: iv e key
-    */
+  
         if(iv!=NULL) tamIv=strlen(iv);
         
         if(key!=NULL) tamKey=strlen(key);    
@@ -124,13 +122,7 @@ static int __init crypto_init(void){
         printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
         
     
-    /*Tento alocar um majorNumber para o dispositivo
-    *   @param: 1 - se for 0 ele procura um mj livre, mas posso força-lo a usar um que quero
-    *           2 - o nome do filho
-    *            3 - a struct com as funçoes que podem ser efetuadas  
-    *    @return: o mj do dispositivo se deu certo
-    *             ou uma flag de erro 
-    */
+    /*Tento alocar um majorNumber para o dispositivo*/
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
     if(majorNumber<0){//majorNumbers sao numeros entre 0 e 256
         printk(KERN_ALERT "CRYPTO--> FALHA NO REGISTRO DO DISPOSITIVO\n");
@@ -138,14 +130,7 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Dispositivo criado com o mj=%d\n",majorNumber);
 
-    /*Registra a classe do dispositivo, tenho que entender melhor como a classe funciona
-    *    @param: 1 - ponteiro pra esse módulo, no caso usa-se uma constante
-    *            2 - nome da classe
-    *    @return: flag de erro
-    *           struct class  
-    *    Há código repetido aqui, pois caso haja falha no registro de
-    *    classe e necessario desfazer o que a função acima fez o mesmo vale para o registro de driver
-    */
+    /*Registra a classe do dispositivo*/
     cryptoClass = class_create(THIS_MODULE,CLASS_NAME);
     if(IS_ERR(cryptoClass)){
         unregister_chrdev(majorNumber,DEVICE_NAME);
@@ -154,15 +139,7 @@ static int __init crypto_init(void){
     }
     printk(KERN_INFO "CRYPTO--> Classe registrada\n");
 
-    /*Registra o dispositivo
-    *    @param: 1 - ponteiro para classe do dispositivo (criamos ela acima)
-    *            2 - caso o device seja dependente de outro passariamos a struct device desse device
-    *            3 - cria um objeto device com o nosso mj e mn
-    *            4 - nao sei :)
-    *            5 - nome do device
-    *    @return: a struct device
-    *            flag de erro  
-    */
+    /*Registra o dispositivo*/
     cryptoDev=device_create(cryptoClass,NULL,MKDEV(majorNumber,0),NULL,DEVICE_NAME);
     if(IS_ERR(cryptoDev)){//repeated code :(
         class_destroy(cryptoClass);
@@ -170,7 +147,7 @@ static int __init crypto_init(void){
         printk(KERN_ALERT "CRYPTO--> FALHA AO REGISTRAR DISPOSITIVO\n");
         return PTR_ERR(cryptoDev);
     }
-    printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n");
+    printk(KERN_INFO "CRYPTO--> Dispositivo registrado\n\n\n");
 
     return 0;
 }
@@ -182,7 +159,7 @@ static void __exit crypto_exit(void){
     class_unregister(cryptoClass);
     class_destroy(cryptoClass);
     unregister_chrdev(majorNumber,DEVICE_NAME);
-    printk(KERN_INFO "CRYPTO--> Adeus kernel cruel!!\n");
+    printk(KERN_INFO "CRYPTO--> Adeus kernel cruel!!\n\n\n");
 }
 
 static int dev_open(struct inode *inodep,struct file *filep){
@@ -198,7 +175,7 @@ static int dev_open(struct inode *inodep,struct file *filep){
 
 static int dev_release(struct inode *inodep,struct file *filep){
     mutex_unlock(&crypto_mutex);
-    printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n");
+    printk(KERN_INFO "CRYPTO--> Modulo dispensado!\n\n\n");
     return 0;
 }
 
@@ -217,7 +194,7 @@ static ssize_t dev_read(struct file *filep,char *buffer,size_t len,loff_t *offse
     }
 
     if(erros==0){
-        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\n",tamSaida);
+        printk(KERN_INFO "CRYPTO--> Mensagem com %d caracteres enviada!\\n",tamSaida);
         return 0;
     }else{
         printk(KERN_ALERT "CRYPTO--> Falha ao enviar mensagem\n");
@@ -302,7 +279,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         ascii2hexa(ascii, encrypted, cont);//ascii tem todos os blocos criptografados
         tamSaida = cont*2;
         encrypted[cont*2]='\0';
-        printk("DEBUG ASC2HEX %s\n",encrypted);
+        //printk("DEBUG ASC2HEX %s\n",encrypted);
 
     }else if(op == 'd'){
         printk("CRYPTO--> Descriptografando..\n"); 
@@ -331,13 +308,15 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         if(unpadding(decrypted, tamSaida) == 0)//Na descriptografia o unpadding eh feito na saida         
             return -1;
 
-        printk("DEBUG HEX2ASC %s\n", decrypted);
+       // printk("DEBUG HEX2ASC %s\n", decrypted);
     }else{
         printk("CRYPTO--> Gerando Hash..\n");
         //hash aqui
         init_hash(ascii, hashAscii, cont);
+        
         ascii2hexa(hashAscii, hash, 40);
         tamSaida = 40;
+        hash[40]='\0';
     }
 
     printk(KERN_INFO "CRYPTO-->  Recebida mensagem com %ld caracteres!\n", len -1);

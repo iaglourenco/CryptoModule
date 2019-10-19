@@ -11,9 +11,6 @@
 #include<fcntl.h>
 #include<string.h>
 #include<unistd.h>
-
-#define TAM_BUFFER 256
-static char recebido[TAM_BUFFER];
 void converteHexa(char *string, char *hexa);
 void insereOpcInicio(char *entrada, char *saida, char opc);
 
@@ -23,9 +20,15 @@ int main(int argc, char *argv[]){
    int option=-99;
    int ret,crypto;
    char *operacao = argv[1];
-   char msgKernelHexa[200];
-   char temp[200];
+   char *msgHexa;
+   char *temp;
+   static char *recebido;
+   static char recebidoHash[41];
+   int flagHexa=0;
+
    if(argc==1) operacao = "none";
+   
+
    
    if(strcmp(operacao,"c")==0) {
       if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
@@ -40,8 +43,10 @@ int main(int argc, char *argv[]){
       if(argc<3){printf("A opcao requer argumentos -- '%s'\n",operacao);goto syntax;}
        option=3;
    }
-   if(strcmp(operacao,"-h")==0) option=0;
-
+   if(strcmp(operacao,"-h")==0){
+      option=0;
+      goto help;
+   }
    if(option >=1 && option <=3){
       if(uid!=0){
          printf(".:CryptoDev:. precisa ser executado como root...\n");
@@ -57,36 +62,84 @@ int main(int argc, char *argv[]){
       }
    }
    
+
+   if(argv[3] !=NULL){
+
+      if(strcmp(argv[3],"--hexa")==0){
+         flagHexa=1;
+      }else if(strcmp(argv[3],"--hexa")==0 && strcmp(operacao,"d")){
+
+         printf("A entrada em hexa somente e permitida na criptografia\n");
+         goto syntax;
+
+      }else{
+         printf("Opcao '%s' desconhecida... \n",argv[3]);
+         goto syntax;
+      }
+   }
+
+   if(flagHexa==1)
+      msgHexa=malloc(strlen(argv[2])+1);   
+   else
+      msgHexa=malloc(strlen(argv[2])*2+1);
+   
+   if(!msgHexa){
+      perror("Falha ao alocar memoria...");
+      return errno;
+   }
+
+   if(flagHexa==1)
+      temp=malloc(strlen(argv[2]));
+   else
+      temp=malloc(strlen(argv[2])*2);
+   
+   if(!temp){
+      perror("Falha ao alocar memoria...");
+      return errno;
+   }
+   recebido=malloc(strlen(argv[2])*16);
+   if(!recebido){
+      perror("Falha ao alocar memoria...");
+      return errno;
+   }
+
+
    switch (option)
    {
       case 1:
          printf("--:Criptografia:--\n");
 
-         converteHexa(argv[2], temp);
+         if(flagHexa==0){
+            converteHexa(argv[2], temp);
+         }
+         else{
+            strcpy(temp,argv[2]);
+         }
 
-         insereOpcInicio(temp,msgKernelHexa,'c');
+
+         insereOpcInicio(temp,msgHexa,'c');
          
-         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
+         ret = write(crypto,msgHexa,strlen(msgHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
          }
          
-         ret = read(crypto,recebido,TAM_BUFFER);
+         ret = read(crypto,recebido,strlen(recebido));
          if(ret < 0){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",msgKernelHexa+1);
+         printf("\nDado enviado: %s\n",msgHexa+1);
          printf("\nDado criptografado: %s\n",recebido);   
       break;
 
       case 2:
          printf("--<Descriptografia>--\n");
           
-         insereOpcInicio(argv[2], msgKernelHexa, 'd');
+         insereOpcInicio(argv[2], msgHexa, 'd');
          
-         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
+         ret = write(crypto,msgHexa,strlen(msgHexa));
          if(ret < 0){
 	    if (ret == -1){
             	perror("Nao e possivel descriptografar esta mensagem, tente novamente");
@@ -96,12 +149,12 @@ int main(int argc, char *argv[]){
             return errno;
          }
 
-         ret = read(crypto,recebido,TAM_BUFFER);
+         ret = read(crypto,recebido,strlen(recebido));
          if(ret < 0){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",msgKernelHexa+1);
+         printf("\nDado enviado: %s",msgHexa+1);
          printf("\nDado descriptografado: %s\n",recebido); 
 
       break;
@@ -109,35 +162,43 @@ int main(int argc, char *argv[]){
       case 3:
          printf("-#-Gerar Hash-#-\n");
 
-         converteHexa(argv[2], temp);
 
-         insereOpcInicio(temp,msgKernelHexa,'h');
+         if(flagHexa==0){
+            converteHexa(argv[2], temp);
+         }
+         else{
+            strcpy(temp,argv[2]);
+         }
+
+         insereOpcInicio(temp,msgHexa,'h');
          
 
-         ret = write(crypto,msgKernelHexa,strlen(msgKernelHexa));
+         ret = write(crypto,msgHexa,strlen(msgHexa));
          if(ret < 0){
             perror("Falha ao enviar dado ao dispositivo...");
             return errno;
          }
-         ret = read(crypto,recebido,TAM_BUFFER);
+         ret = read(crypto,recebidoHash,40);
          if(ret < 0){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s",msgKernelHexa+1);
-         printf("\nHash: %s\n",recebido); 
-      
+         printf("\nDado enviado: %s",msgHexa+1);
+         printf("\nHash: %s\n",recebidoHash); 
+
       break;
    case 0:
+   help:
       printf(".:CryptoDev:. - Desenvolvido por Adriano, Fabio, Iago e Lucas\n");
       printf("Faz operaçoes de criptografia usando um LKM\n");
-      printf("Como usar: ./crypto [OPERACAO] [DADO]\n------\n");
-      printf("OPERACOES\n\t c - Criptografar\n\t d - Descriptografar\n\t h - Gerar Hash\n\t-h - Esta tela de ajuda\n\n");
-      printf("DADO - Qualquer valor diferente de NULL\n");
+      printf("Como usar: ./crypto [OPERACAO] [DADO] [--hexa]\n------\n");
+      printf("OPERACOES \n\t c - Criptografar\n\t d - Descriptografar\n\t h - Gerar Hash\n\t-h - Esta tela de ajuda\n\n");
+      printf("DADO\n\t\n\tc,h - No minimo 1 caracter\n\td - Mensagem a ser descriptografada\n\n");
+      printf("A opcao '--hexa' apos o dado, fara com que o dado seja tratado como hexadecimal,\nsendo permitida somente na criptografia e no hash!\n");
       break;
    default:
-   syntax:
-      printf("Sintaxe invalida!!\n\n Exemplo: ./crypto [cdh] [DADO]... Tente './crypto -h' para ajuda.\n");
+syntax:
+      printf("Sintaxe invalida!!\n\n Exemplo: ./crypto [cdh] [DADO] [OPCOES]... Tente './crypto -h' para ajuda.\n");
       return 0;
       break;
    }   
@@ -152,7 +213,7 @@ void converteHexa(char *string, char hexa[]){
    for(i = 0; i < tam; i++){        
       sprintf(hexa+i*2,"%02x", string[i]);
    }
-   hexa[(i*2)+1]='\0'; 
+   sprintf(hexa+i*2+1,"%c",'\0'); 
 }
 
 void insereOpcInicio(char entrada[], char saida[], char opc){
