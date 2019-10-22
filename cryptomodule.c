@@ -457,41 +457,56 @@ static void init_hash(char *textIn, char *digest, int qtdChar){
     struct shash_desc *shash;
     int ret;
 
+    //Aloca identificador do resumo da mensagem com a criptografia(sha1) e as flags de tipo e parametros zeradas.
     sha1 = crypto_alloc_shash("sha1", 0, 0);
+    //Verificando erro em crypto_alloc_shash... Em caso de erro, a flag IS_ERR sera true, e PTR_ERROR contera a mensagem de erro.
     if (IS_ERR(sha1)){
         printk(KERN_ERR  "hash failed erro: nao foi possivel alocar shash");
         return;
     }
 
+    //Alocando Memoria para o identificador de estado operacional(sash) com 41 bytes, que ira conter o identificador 
+    //do resumo da mensagem(variavel sha1), mensagem a ser criptada e seu respectivo resumo criptografico .
     shash = vmalloc(41);
+    //Verificando erro... Se vmalloc retornar um numero menor 0, entao erro.
     if (!shash){
         printk(KERN_ERR  "hash failed erro: %i\n", ENOMEM);
         return;
     }
 
+
+    //Inserindo o identificador do resumo da mensagem(variavel sha1) no identificador de estado operacional(shash).
     shash->tfm = sha1;
+    //Atribuindo as flags para 0.
     shash->flags = 0;
 
+    //(Re)iniciando a parte do retorno de resposta da criptografia no identificador de estado operacional(shash).
     ret = crypto_shash_init(shash);
+    //Verificando erro... Se crypto_shash_init retornar um numero menor 0, entao erro.
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
         return;
     }        
-        
+
+    //Inserindo a mensagem a ser criptada no identificador de estado operacional(shash). 
     ret = crypto_shash_update(shash, textIn, qtdChar);
+    //Verificando erro... Se crypto_shash_update retornar um numero menor 0, entao erro.
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
         return;
     }        
-        
+    
+    //Calculando o resumo criptografico, que estara em digest...
     ret = crypto_shash_final(shash, digest);
-
+    //Verificando erro... Se crypto_shash_final retornar um numero menor 0, entao erro.
     if (ret){
         printk(KERN_ERR  "hash failed erro: %i\n", ret);
         return;
     }        
 
+    //Liberando memoria alocada para o shash...
     vfree(shash);
+    //Liberando memoria alocada para o sha1...
     crypto_free_shash(sha1);
 }
 
