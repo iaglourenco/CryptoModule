@@ -68,9 +68,22 @@ int main(int argc, char *argv[]){
 
    if(argv[3] !=NULL){
 
-      if(strcmp(argv[3],"--hexa")==0){
-         flagHexa=1;
-      }else if(strcmp(argv[3],"--hexa")==0 && strcmp(operacao,"d")){
+      if(strcmp(argv[3],"--hexa")==0)
+      {
+         for(int i = 0; i < strlen(argv[2]); i++)
+         {
+            if(((argv[2][i] >= 48 && argv[2][i] <= 57) || (argv[2][i] >= 65 && argv[2][i] <= 70) || (argv[2][i] >= 97 && argv[2][i] <= 102)) && ((strlen(argv[2]) % 2) == 0))
+            {
+               flagHexa=1;
+            }
+            else
+            {
+               printf("Digite uma entrada em hexadecimal valida!\n");
+               goto syntax;
+            }
+         }
+      }
+      else if(strcmp(argv[3],"--hexa")==0 && strcmp(operacao,"d")){
 
          printf("A entrada em hexa somente e permitida na criptografia\n");
          goto syntax;
