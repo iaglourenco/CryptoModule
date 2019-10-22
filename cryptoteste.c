@@ -11,8 +11,11 @@
 #include<fcntl.h>
 #include<string.h>
 #include<unistd.h>
+#include<ctype.h>
+
 void converteHexa(char *string, char *hexa);
 void insereOpcInicio(char *entrada, char *saida, char opc);
+int converteASCII(char *string, char ascii[]);
 
 int main(int argc, char *argv[]){
 
@@ -130,7 +133,7 @@ int main(int argc, char *argv[]){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
-         printf("\nDado enviado: %s\n",msgHexa+1);
+         printf("\nDado enviado: %s",msgHexa+1);
          printf("\nDado criptografado: %s\n",recebido);   
       break;
 
@@ -154,8 +157,17 @@ int main(int argc, char *argv[]){
             perror("Falha ao ler dado do dispositivo...");
             return errno;
          }
+
+ 	 temp = malloc((strlen(recebido))/2);
+	 
+	
          printf("\nDado enviado: %s",msgHexa+1);
-         printf("\nDado descriptografado: %s\n",recebido); 
+         printf("\nDado descriptografado: %s",recebido);
+         if(converteASCII(recebido, temp))
+	         printf("\nDado descriptografado ASCII: %s\n",temp);
+         else
+            printf("\nNao e possivel imprimir em ASCII, existe algum caractere nao imprimivel\n");
+              
 
       break;
 
@@ -224,6 +236,24 @@ void insereOpcInicio(char entrada[], char saida[], char opc){
    for(i = 0; i < tam; i++){
       saida[i+1] = entrada[i];
    }
-   saida[i+1]='\0';
-   
+   saida[i+1]='\0';   
 }
+
+int converteASCII(char *string, char ascii[]){ 
+    char temp[2];
+    int i;    
+    int cont = 0;
+    int tam = strlen(string);
+    for(i = 0; i < tam; i+=2){         
+        temp[0]  = string[i];
+        temp[1]  = string[i+1];
+        sscanf(temp, "%hhx", &ascii[cont]);
+        if (!isprint(ascii[cont]))
+            return 0;
+        cont++;    
+   }
+   return 1;
+}
+
+
+
