@@ -118,19 +118,6 @@ static int __init crypto_init(void){
             printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
             return -EINVAL;
         }
-
-        if((tamIv - 16) != 0)
-        {
-            printk(KERN_ALERT "IV fora do padrao permitido!");
-            return -EINVAL;
-        }
-
-        if((tamKey - 16) != 0)
-        {
-            printk(KERN_ALERT "Chave fora do padrao permitido!");
-            return -EINVAL;
-        }
-        
         printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
         printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
         
@@ -295,6 +282,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         //printk("DEBUG ASC2HEX %s\n",encrypted);
 
     }else if(op == 'd'){
+        if(tamInput%32) return -1;//Caso a entrada nao seja multiplo de 32, retorna erro
         printk("CRYPTO--> Descriptografando..\n"); 
         //descriptografia aqui
 
@@ -319,7 +307,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         tamSaida=cont*2;
 
         if(unpadding(decrypted, tamSaida) == 0)//Na descriptografia o unpadding eh feito na saida         
-            return -1;
+            return -1;                         //Retorna erro se nao tiver padding valido 
 
        // printk("DEBUG HEX2ASC %s\n", decrypted);
     }else{
@@ -356,7 +344,7 @@ static void init_cifra(char *msgInput, char *msgOutput, int opc){
         char saida[16];
         char entrada[16];
 
-        skcipher = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
+        skcipher = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 
         req = skcipher_request_alloc(skcipher, GFP_KERNEL);
         if (req == NULL) {
@@ -435,8 +423,7 @@ static void padding(char *string, int len){ //Padrao utilizado PKCS#7
         for(i = 0; i < (32 - bytesOcupados); i++){//O ultimo bloco eh preenchido com o valor da qtd de bytes livres
             sprintf(string + qdtBlocos32*32 + i*2 + bytesOcupados,"%02x", (32 - bytesOcupados)/2);
          }
-    }
-    
+    }    
 }
 
 static int unpadding(char *string, int len){ //Padrao utilizado PKCS#7
