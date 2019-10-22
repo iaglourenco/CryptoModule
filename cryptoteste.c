@@ -13,6 +13,7 @@
 #include<unistd.h>
 #include<ctype.h>
 
+int verifica_hexa(char entrada[]);
 void converteHexa(char *string, char *hexa);
 void insereOpcInicio(char *entrada, char *saida, char opc);
 int converteASCII(char *string, char ascii[]);
@@ -70,18 +71,15 @@ int main(int argc, char *argv[]){
 
       if(strcmp(argv[3],"--hexa")==0)
       {
-         for(int i = 0; i < strlen(argv[2]); i++)
-         {
-            if(((argv[2][i] >= 48 && argv[2][i] <= 57) || (argv[2][i] >= 65 && argv[2][i] <= 70) || (argv[2][i] >= 97 && argv[2][i] <= 102)) && ((strlen(argv[2]) % 2) == 0))
-            {
-               flagHexa=1;
-            }
-            else
-            {
-               printf("Digite uma entrada em hexadecimal valida!\n");
-               goto syntax;
-            }
-         }
+        if(verifica_hexa(argv[2]) == 1)
+        {
+           flagHexa=1;
+        }
+        else
+        {
+            printf("Digite uma entrada em hexadecimal valida!\n");
+            goto syntax;
+        }
       }
       else if(strcmp(argv[3],"--hexa")==0 && strcmp(operacao,"d")){
 
@@ -230,6 +228,22 @@ syntax:
    return 0;
 }
 
+int verifica_hexa(char entrada[])
+{
+   for(int i = 0; i < strlen(entrada); i++)
+   {
+      if(!((                                          // !!!!! IF NEGADO !!!!!
+         (entrada[i] >= 48 && entrada[i] <= 57) ||    //Se letra esta entre 0(48 em ASCII) e 9(57 em ASCII)
+         (entrada[i] >= 65 && entrada[i] <= 70) ||    // ou letra esta entre A(65 em ASCII) e F(70 em ASCII)
+         (entrada[i] >= 97 && entrada[i] <= 102)) &&  // ou letra esta entre a(97 em ASCII) e a(102 em ASCII) 
+         ((strlen(entrada) % 2) == 0)))               // E a cadeia de caracteres eh par
+      {
+         return 0;
+      }
+   }
+
+   return 1;
+}
 
 
 void converteHexa(char *string, char hexa[]){
