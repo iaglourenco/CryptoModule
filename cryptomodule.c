@@ -271,15 +271,14 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
             }
         }
 
-        encrypted=vmalloc(cont*2);
+        encrypted=vmalloc(cont*2+1);
         if(!encrypted){
             printk(KERN_ERR "kmalloc(encrypted) error");
         }
 
         ascii2hexa(ascii, encrypted, cont);//ascii tem todos os blocos criptografados
         tamSaida = cont*2;
-        encrypted[cont*2]='\0';
-        //printk("DEBUG ASC2HEX %s\n",encrypted);
+        encrypted[cont*2] = '\0';
 
     }else if(op == 'd'){
         if(tamInput%32) return -1;//Caso a entrada nao seja multiplo de 32, retorna erro

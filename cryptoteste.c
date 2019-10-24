@@ -111,7 +111,7 @@ int main(int argc, char *argv[]){
       perror("Falha ao alocar memoria...");
       return errno;
    }
-   recebido=malloc(strlen(argv[2])*16);
+   recebido=malloc(strlen(argv[2])*2+32);
    if(!recebido){
       perror("Falha ao alocar memoria...");
       return errno;
