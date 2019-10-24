@@ -57,9 +57,9 @@ struct skcipher_def {
 * The fourth argument is the permission bits
 */
 
-char *keyUsr,*ivUsr;
-char iv[16];
-char key[16];//Guarda o array de strings recebidos do usuario
+char *key,*iv,*tempIv,*tempKey;
+char *ivC;
+char *keyC;//Guarda o array de strings recebidos do usuario
 static int tamIv=0;
 static int tamKey=0; //Para se lembrar do tamanho das strings
 //static char cryptokey[32];
@@ -79,11 +79,11 @@ int pos,i;
 char op;
 char buf;
 
-module_param(ivUsr,charp,0000);
-MODULE_PARM_DESC(ivUsr,"Vetor de inicialização");
+module_param(iv,charp,0000);
+MODULE_PARM_DESC(iv,"Vetor de inicialização");
 
-module_param(keyUsr,charp,0000);
-MODULE_PARM_DESC(keyUsr,"Chave de criptografia");
+module_param(key,charp,0000);
+MODULE_PARM_DESC(key,"Chave de criptografia");
 
 //Prototipo das funçoes
 static int dev_open(struct inode *, struct file *);
@@ -95,7 +95,7 @@ static void ascii2hexa(unsigned char *in, char *out, int len);
 static int unpadding(char *string, int len);
 static void padding(char *string, int len);
 static void init_hash(char *textIn, char *digest, int qtdChar);
-int converteASCII(char *string, char ascii[]){ 
+int converteASCII(char *string, char *ascii){ 
     char temp[2];
     int i;    
     int cont = 0;
@@ -123,32 +123,38 @@ static int __init crypto_init(void){
     mutex_init(&crypto_mutex);
     
   
-        if(iv!=NULL) tamIv=strlen(ivUsr);
+        if(iv!=NULL) tamIv=strlen(iv);
         
-        if(key!=NULL) tamKey=strlen(keyUsr);    
+        if(key!=NULL) tamKey=strlen(key);    
         
-        if(tamIv == 0 || tamKey == 0) {
-            printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
-            return -EINVAL;
-        }
-    
-        if((tamIv - 32) != 0)
-        {
-            printk(KERN_ALERT "IV fora do padrao permitido!");
-            return -EINVAL;
-        }
 
-        if((tamKey < 32)
-        {
+        tempIv=vmalloc(32);
+        tempKey=vmalloc(32);
+        keyC=vmalloc(16);
+        ivC=vmalloc(16);
+        memcpy(tempIv,iv,strlen(iv));
+        memcpy(tempKey,key,strlen(key));
+
+        if(tamIv < 32) {
             
+            padding(tempIv,tamIv);
         }
     
-        converteASCII(keyUsr,key);
-        converteASCII(ivUsr,iv);
+        if(tamKey < 32)
+        {
+            padding(tempKey,tamKey);
+        }
 
-        printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
-        printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
+        tempIv[32]='\0';
+        tempKey[32]='\0';
+        printk(KERN_INFO "CRYPTO--> key =%s\n",tempKey);
+        printk(KERN_INFO "CRYPTO--> iv =%s\n",tempIv);
         
+        converteASCII(tempKey,keyC);
+        converteASCII(tempIv,ivC);
+        keyC[16]='\0';
+        ivC[16]='\0';
+
     
     /*Tento alocar um majorNumber para o dispositivo*/
     majorNumber = register_chrdev(0,DEVICE_NAME,&fops);
@@ -269,7 +275,7 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
         return -ENOMEM;
     }    
 
-    memcpy(ivLocal, iv, 16);
+    memcpy(ivLocal, ivC, 16);
     memcpy(input, buffer+1,tamInput);
   
 
@@ -381,7 +387,7 @@ static void init_cifra(char *msgInput, char *msgOutput, int opc){
                 goto out;
         }
 
-        ret = crypto_skcipher_setkey(skcipher, key, strlen(keyUsr)/2);
+        ret = crypto_skcipher_setkey(skcipher, keyC, strlen(keyC));
         if (ret) {
                 printk(KERN_ERR  "setkey() failed\n");
                 goto out;
