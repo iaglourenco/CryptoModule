@@ -48,6 +48,8 @@ onde,
 - `operação` são as opçoes descritas na seção anterior.
 - `dados` qualquer valor diferente de `NULL`.
 
+Adicionando a flag `--hexa` após o dado, fará com que o mesmo seja tratado como hexadecimal.
+
 **Obs.:** Essa mesma explicação pode ser acessada digitando `sudo ./crypto -h`. 
 
 # Material Complementar
