@@ -223,8 +223,11 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
     char blocoCrypto[16]={0};
     int cont = 0, indice;
 
-    tamInput = len - 1;
 
+    op = buffer[0];
+    tamInput = len - 1;
+    if(tamInput%32 && op == 'd') return -1;//Caso a entrada nao seja multiplo de 32, retorna erro
+        
     if(!(tamInput % 16)){
         input = vmalloc(tamInput + 32);
     }else{
@@ -254,7 +257,6 @@ static ssize_t dev_write(struct file *filep,const char *buffer,size_t len, loff_
     memcpy(ivLocal, iv, 16);
     memcpy(input, buffer+1,tamInput);
   
-    op = buffer[0];
 
     if(op == 'c') {
         padding(input, tamInput); //Caso a opcao seja de criptgrafia, o padding eh feito na entrada.
