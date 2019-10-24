@@ -118,6 +118,19 @@ static int __init crypto_init(void){
             printk(KERN_ALERT "CRYPTO--> Chave ou iv vazias, encerrando!");
             return -EINVAL;
         }
+    
+        if((tamIv - 16) != 0)
+        {
+            printk(KERN_ALERT "IV fora do padrao permitido!");
+            return -EINVAL;
+        }
+
+        if((tamKey - 16) != 0)
+        {
+            printk(KERN_ALERT "Chave fora do padrao permitido!");
+            return -EINVAL;
+        }
+    
         printk(KERN_INFO "CRYPTO--> iv len=%d\n",tamIv);
         printk(KERN_INFO "CRYPTO--> key len=%d\n",tamKey);
         
