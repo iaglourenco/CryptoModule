@@ -55,7 +55,12 @@ Adicionando a flag `--hexa` após o dado, fará com que o mesmo seja tratado com
 # Compilando
 
 **Certifique-se de que os pacotes `deb-src` estejam adicionados ao seu `sources.list`, e devidamente instalados**
-Use `make`, para compilar todos os programas necessarios, `make new` para substituir o módulo atual, `make crypto` para somente o programa de testes e `make clean` para limpar os arquivos temporários de compilação.
+
+Use: 
+- `make`, para compilar todos os programas necessarios. 
+- `make new` para substituir o módulo atual. 
+- `make crypto` para somente o programa de testes 
+- `make clean` para limpar os arquivos temporários de compilação.
 
 # Material Complementar
 
